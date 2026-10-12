@@ -8,7 +8,7 @@ import { chatJson, hasLlm, llmConfig } from "@/lib/llm";
 import type { Briefing, CycleEvent, Director, Report } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+export const maxDuration = 60;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const jitter = (min: number, max: number) => min + Math.random() * (max - min);
