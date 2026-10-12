@@ -341,6 +341,73 @@ function OwnerNode() {
   );
 }
 
+/* ----------------------------- Airlock membrane ---------------------------- */
+
+export const VERDICT_COLOR: Record<string, string> = {
+  permitido: "#34d399",
+  aprobacion: "#fbbf24",
+  bloqueado: "#f87171",
+  cuarentena: "#c084fc",
+  redactado: "#60a5fa",
+};
+
+const MEMBRANE_Y = 3.9;
+const MEMBRANE_R = 4.4;
+
+/** Escudo hexagonal por donde pasa todo lo que los agentes hacen hacia el mundo. */
+function AirlockMembrane() {
+  const flash = useOrquesta((s) => s.flash);
+  const select = useOrquesta((s) => s.select);
+  const group = useRef<THREE.Group>(null);
+  const band = useRef<THREE.MeshBasicMaterial>(null);
+  const cage = useRef<THREE.MeshBasicMaterial>(null);
+  const flashAt = useRef(-10);
+  const color = useMemo(() => new THREE.Color(), []);
+  const base = useMemo(() => new THREE.Color("#5eead4"), []);
+
+  const lastId = useRef<number | null>(null);
+  useFrame(({ clock }, dt) => {
+    const t = clock.elapsedTime;
+    if (flash && flash.id !== lastId.current) {
+      lastId.current = flash.id;
+      flashAt.current = t;
+    }
+    const k = Math.max(0, 1 - (t - flashAt.current) / 1.1);
+    color.copy(base).lerp(new THREE.Color(flash ? VERDICT_COLOR[flash.verdict] : "#5eead4"), k);
+    if (group.current) group.current.rotation.y += dt * 0.12;
+    if (band.current) {
+      band.current.color.copy(color);
+      band.current.opacity = 0.06 + k * 0.28;
+    }
+    if (cage.current) {
+      cage.current.color.copy(color);
+      cage.current.opacity = 0.35 + k * 0.6;
+    }
+  });
+
+  return (
+    <group position-y={MEMBRANE_Y}>
+      <group ref={group}>
+        <mesh>
+          <cylinderGeometry args={[MEMBRANE_R, MEMBRANE_R, 0.9, 6, 1, true]} />
+          <meshBasicMaterial ref={band} transparent opacity={0.08} side={THREE.DoubleSide} depthWrite={false} toneMapped={false} />
+        </mesh>
+        <mesh>
+          <cylinderGeometry args={[MEMBRANE_R + 0.01, MEMBRANE_R + 0.01, 0.9, 6, 3, true]} />
+          <meshBasicMaterial ref={cage} wireframe transparent opacity={0.4} toneMapped={false} />
+        </mesh>
+      </group>
+      <group position={[MEMBRANE_R + 0.2, 0.9, 0]}>
+        <Html center distanceFactor={14} zIndexRange={Z_RANGE} portal={labelPortal as React.RefObject<HTMLElement>}>
+          <button className="airlock-tag" onClick={() => select("airlock")}>
+            <span>⬢</span> AIRLOCK
+          </button>
+        </Html>
+      </group>
+    </group>
+  );
+}
+
 /* ---------------------------------- Scene --------------------------------- */
 
 function Controls() {
@@ -399,6 +466,7 @@ export default function Scene() {
       ))}
       <CeoNode />
       <OwnerNode />
+      <AirlockMembrane />
       <Pulses />
 
       <Controls />

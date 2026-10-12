@@ -3,7 +3,31 @@
 import { useEffect, useRef } from "react";
 import { CEO, COMPANY, DIRECTORS, DIRECTOR_BY_ID, OWNER } from "@/lib/company";
 import { useOrquesta, type FeedItem } from "@/lib/store";
-import type { Briefing, DirectorId, NodeId } from "@/lib/types";
+import type { AirlockEntry, Briefing, DirectorId, NodeId, Verdict } from "@/lib/types";
+
+const VERDICT: Record<Verdict, { label: string; color: string }> = {
+  permitido: { label: "permitido", color: "#34d399" },
+  aprobacion: { label: "requiere aprobación", color: "#fbbf24" },
+  bloqueado: { label: "bloqueado", color: "#f87171" },
+  cuarentena: { label: "cuarentena", color: "#c084fc" },
+  redactado: { label: "datos ocultos", color: "#60a5fa" },
+};
+
+const LAYERS = [
+  { name: "Entrada", desc: "Escanea los datos de las herramientas y pone en cuarentena los intentos de prompt injection antes de que lleguen al modelo." },
+  { name: "Contrato", desc: "Deny-by-default: la herramienta debe existir, el área debe ser su dueña y los argumentos deben tener el tipo correcto. Quita argumentos no declarados." },
+  { name: "Política", desc: "Lectura y escritura interna pasan solas. Lo crítico (correos externos, datos, sueldos) espera al dueño. Mover dinero o mandar datos fuera se bloquea." },
+  { name: "Límites", desc: "Máximo de acciones por directivo y presupuesto de tokens por jornada." },
+  { name: "Salida", desc: "Oculta correos externos, teléfonos, tarjetas, RFC/CURP y API keys antes de que lleguen a la UI, a otro agente o al proveedor del LLM." },
+];
+
+function VerdictChip({ v }: { v: Verdict }) {
+  return (
+    <span className="verdict" style={{ ["--v" as string]: VERDICT[v].color }}>
+      {VERDICT[v].label}
+    </span>
+  );
+}
 
 const NODE_META: Record<NodeId, { name: string; color: string }> = {
   ceo: { name: CEO.name, color: "#93c5fd" },
@@ -67,6 +91,17 @@ function Who({ id }: { id: NodeId | null | undefined }) {
 function FeedRow({ item }: { item: FeedItem }) {
   if (item.kind === "system") return <div className="feed-system">{item.text}</div>;
   if (item.kind === "error") return <div className="feed-error">⚠ {item.text}</div>;
+  if (item.kind === "airlock")
+    return (
+      <div className="feed-row feed-airlock" style={{ ["--v" as string]: VERDICT[item.verdict!].color }}>
+        <span className="shield">⬢</span>
+        <div>
+          <span className="airlock-word">Airlock</span> <VerdictChip v={item.verdict!} /> <Who id={item.from} />
+          <div className="mono tool">{item.text}</div>
+          <div className="feed-detail">{item.detail}</div>
+        </div>
+      </div>
+    );
   if (item.kind === "tool")
     return (
       <div className="feed-row">
@@ -228,8 +263,103 @@ function Gauge({ value }: { value: number }) {
   );
 }
 
+function AirlockDetail() {
+  const entries = useOrquesta((s) => s.airlock);
+  const counts = entries.reduce<Record<string, number>>((acc, e) => {
+    acc[e.verdict] = (acc[e.verdict] ?? 0) + 1;
+    return acc;
+  }, {});
+  return (
+    <div className="detail" style={{ ["--c" as string]: "#5eead4" }}>
+      <div className="detail-kicker">Capa de seguridad</div>
+      <h2 className="detail-title">Airlock</h2>
+      <p className="detail-mission">
+        La membrana entre los agentes y el mundo. Todo lo que un directivo lee o quiere hacer pasa por 5 capas, y cada decisión queda en una bitácora con hashes encadenados.
+      </p>
+      <div className="verdict-grid">
+        {(Object.keys(VERDICT) as Verdict[]).map((v) => (
+          <div key={v} style={{ ["--v" as string]: VERDICT[v].color }}>
+            <b>{counts[v] ?? 0}</b>
+            <span>{VERDICT[v].label}</span>
+          </div>
+        ))}
+      </div>
+      <div className="section-label">Las 5 capas</div>
+      {LAYERS.map((l, i) => (
+        <div key={l.name} className="layer">
+          <span className="layer-n">{i + 1}</span>
+          <div>
+            <b>{l.name}</b>
+            <p>{l.desc}</p>
+          </div>
+        </div>
+      ))}
+      <div className="section-label">Bitácora de auditoría</div>
+      {entries.length === 0 ? (
+        <p className="waiting">Inicia la jornada para ver cada decisión de Airlock.</p>
+      ) : (
+        <div className="audit">
+          {entries.map((e) => (
+            <div key={e.seq} className="audit-row" style={{ ["--v" as string]: VERDICT[e.verdict].color }}>
+              <div className="audit-head">
+                <span className="mono">#{e.seq}</span>
+                <VerdictChip v={e.verdict} />
+                <Who id={e.node} />
+                <span className="audit-layer">{e.layer}</span>
+              </div>
+              <div className="mono tool">{e.tool}</div>
+              <div className="audit-reason">{e.reason}</div>
+              {e.detail && <div className="feed-detail">{e.detail}</div>}
+              <div className="hash mono" title={"hash " + e.hash + "\nprev " + e.prev}>
+                {e.prev.slice(0, 8)} → {e.hash.slice(0, 8)}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Approvals({ items }: { items: AirlockEntry[] }) {
+  const approvals = useOrquesta((s) => s.approvals);
+  const resolve = useOrquesta((s) => s.resolveApproval);
+  if (!items.length) return null;
+  return (
+    <>
+      <div className="section-label">⬢ Airlock: acciones que esperan tu aprobación</div>
+      {items.map((e) => {
+        const state = approvals[e.seq];
+        return (
+          <div key={e.seq} className="approval">
+            <div className="audit-head">
+              <Who id={e.node} />
+              <span className="mono tool">{e.tool}</span>
+            </div>
+            {e.detail && <p className="decision-context">{e.detail}</p>}
+            {state ? (
+              <div className={"approval-state " + state}>{state === "aprobado" ? "✓ Aprobado, se ejecuta" : "✕ Rechazado"}</div>
+            ) : (
+              <div className="options">
+                <button className="opt opt-main" onClick={() => resolve(e.seq, "aprobado")}>
+                  Aprobar
+                </button>
+                <button className="opt" onClick={() => resolve(e.seq, "rechazado")}>
+                  Rechazar
+                </button>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
 function OwnerInbox({ briefing }: { briefing: Briefing | null }) {
   const running = useOrquesta((s) => s.running);
+  const airlock = useOrquesta((s) => s.airlock);
+  const pending = airlock.filter((e) => e.verdict === "aprobacion");
   return (
     <div className="detail" style={{ ["--c" as string]: OWNER.color }}>
       <div className="detail-kicker">Bandeja del dueño</div>
@@ -276,6 +406,7 @@ function OwnerInbox({ briefing }: { briefing: Briefing | null }) {
               </div>
             </div>
           ))}
+          <Approvals items={pending} />
         </>
       )}
     </div>
@@ -288,6 +419,7 @@ function DetailPanel() {
   const select = useOrquesta((s) => s.select);
   let body;
   if (selected === "ceo") body = <CeoDetail />;
+  else if (selected === "airlock") body = <AirlockDetail />;
   else if (selected && selected !== "dueno") body = <DirectorDetail id={selected} />;
   else body = <OwnerInbox briefing={briefing} />;
   return (
@@ -304,6 +436,22 @@ function DetailPanel() {
 
 /* --------------------------------- Footer --------------------------------- */
 
+function AirlockButton() {
+  const entries = useOrquesta((s) => s.airlock);
+  const select = useOrquesta((s) => s.select);
+  const stopped = entries.filter((e) => e.verdict === "bloqueado" || e.verdict === "cuarentena").length;
+  const pending = entries.filter((e) => e.verdict === "aprobacion").length;
+  return (
+    <button className="airlock-btn glass" onClick={() => select("airlock")}>
+      <span className="shield">⬢</span>
+      <b>Airlock</b>
+      <span>{entries.length} revisiones</span>
+      {stopped > 0 && <span className="pill red">{stopped} frenadas</span>}
+      {pending > 0 && <span className="pill amber">{pending} por aprobar</span>}
+    </button>
+  );
+}
+
 function Footer() {
   const stats = useOrquesta((s) => s.stats);
   const mode = useOrquesta((s) => s.mode);
@@ -318,6 +466,7 @@ function Footer() {
           </button>
         ))}
       </div>
+      <AirlockButton />
       {stats && (
         <div className="stats glass mono">
           {(stats.ms / 1000).toFixed(1)}s · {mode === "live" ? `${stats.tokens.toLocaleString()} tokens` : "sin costo (demo)"}

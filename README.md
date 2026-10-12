@@ -24,7 +24,25 @@ Todo se ve en vivo en una torre de mando 3D.
 3. **Se comunica con otras áreas** cuando detecta algo que les afecta (por ejemplo, Ventas avisa a Ingeniería que un trato nuevo necesita gente).
 4. **Nexo (el orquestador)** cruza los 5 reportes, encuentra lo que ningún directivo ve por separado y entrega al dueño máximo 3 decisiones, cada una con contexto, recomendación y opciones.
 
-Los datos de la empresa ficticia (*Nébula Studio*) están diseñados con tensiones reales entre áreas, para que los agentes tengan algo que descubrir.
+Los datos de la empresa ficticia (*Nébula Studio*) están diseñados con tensiones reales entre áreas, para que los agentes tengan algo que descubrir. Atlas (Ingeniería) lee datos **reales** de GitHub.
+
+## Airlock: la capa de seguridad
+
+Darle herramientas a los agentes es darles poder. **Airlock** es la membrana entre los agentes y el mundo; en la escena 3D es el anillo hexagonal que destella con cada veredicto. Todo lo que un directivo lee o quiere hacer pasa por 5 capas:
+
+| # | Capa | Qué hace |
+|---|------|----------|
+| 1 | **Entrada** | Escanea los datos de las herramientas (correos, Slack, GitHub) y pone en **cuarentena** los intentos de *prompt injection* antes de que lleguen al modelo. |
+| 2 | **Contrato** | *Deny-by-default*: la herramienta debe existir en la política, el área debe ser su dueña y los argumentos deben tener el tipo correcto. Los argumentos no declarados se eliminan. |
+| 3 | **Política** | Las acciones de lectura y la escritura interna pasan solas. Las **críticas** (correos externos, sueldos) esperan la aprobación del dueño. Mover dinero o mandar datos a dominios no permitidos se **bloquea**. |
+| 4 | **Límites** | Máximo de acciones por directivo y presupuesto de tokens por jornada. |
+| 5 | **Salida** | Oculta correos externos, teléfonos, tarjetas, RFC/CURP y API keys antes de que lleguen a la UI, a otro agente o al proveedor del LLM. |
+
+Cada decisión queda en una **bitácora de auditoría con hashes SHA-256 encadenados**: si alguien altera una entrada vieja, la cadena deja de cuadrar.
+
+La demo incluye ataques reales para que Airlock los atrape: un correo de phishing que le ordena al asistente exportar la lista de clientes a un Gmail, un directivo que intenta mandar el pipeline a un correo personal y otro que intenta hacer una transferencia bancaria.
+
+La política es declarativa ([`src/lib/airlock/policy.ts`](src/lib/airlock/policy.ts)) y el motor está en [`src/lib/airlock/index.ts`](src/lib/airlock/index.ts). El diseño se inspira en el patrón de *governance membrane* para sistemas multiagente y en [agent-airlock](https://pypi.org/project/agent-airlock/).
 
 ## Stack
 

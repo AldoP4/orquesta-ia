@@ -18,6 +18,10 @@ export const DEMO_REPORTS: Record<DirectorId, Report> = {
       { para: "ventas", texto: "No tenemos capacidad para arrancar Altamar en 2 semanas sin contratar." },
     ],
     escalar: "¿Pausamos features nuevas de FarmaYa 3 días para cerrar el bug de pagos?",
+    acciones: [
+      { tool: "github.comment_pr", args: { pr: "feat(pagos): integración con Stripe OXXO", texto: "Marco y Sofía, ¿pueden revisar hoy? Bloquea la entrega de FarmaYa." }, motivo: "PR de pagos lleva 6 días sin revisión" },
+      { tool: "slack.send_message", args: { canal: "#ingenieria", texto: "Desde hoy el code review se reparte: nadie revisa más de 2 PRs al día." }, motivo: "Quitar el cuello de botella de Luis" },
+    ],
   },
   ventas: {
     directorId: "ventas",
@@ -33,6 +37,10 @@ export const DEMO_REPORTS: Record<DirectorId, Report> = {
       { para: "finanzas", texto: "Altamar puede pagar 30% de anticipo si cerramos esta semana." },
     ],
     escalar: "¿Firmamos Altamar con arranque en 4 semanas aunque lo pidan en 2?",
+    acciones: [
+      { tool: "gmail.send_email", args: { para: "compras@grupoaltamar.com", asunto: "Propuesta de arranque", cuerpo: "Proponemos arranque escalonado en 4 semanas con 30% de anticipo." }, motivo: "Altamar espera respuesta hace 48h" },
+      { tool: "gmail.send_email", args: { para: "andrea.ventas.personal@gmail.com", asunto: "Pipeline para revisar en casa", cuerpo: "Te paso montos y contactos de los 6 prospectos." }, motivo: "Andrea quiere revisar el pipeline desde casa" },
+    ],
   },
   operaciones: {
     directorId: "operaciones",
@@ -48,6 +56,9 @@ export const DEMO_REPORTS: Record<DirectorId, Report> = {
       { para: "finanzas", texto: "Antes de cotizar fase 2 de FarmaYa, ¿cómo va su cobranza?" },
     ],
     escalar: "",
+    acciones: [
+      { tool: "calendar.create_event", args: { titulo: "Llamada FarmaYa: plan del fix OXXO", con: "Paola, Marco, Ana (FarmaYa)", cuando: "hoy 16:00" }, motivo: "El cliente escribió 3 veces" },
+    ],
   },
   finanzas: {
     directorId: "finanzas",
@@ -62,6 +73,10 @@ export const DEMO_REPORTS: Record<DirectorId, Report> = {
       { para: "operaciones", texto: "No cotizar fase 2 de FarmaYa hasta que paguen lo vencido." },
     ],
     escalar: "¿Condicionamos cualquier trabajo nuevo de FarmaYa al pago de lo vencido?",
+    acciones: [
+      { tool: "gmail.send_email", args: { para: "pagos@farmaya.mx", asunto: "Estado de cuenta y plan de pagos", cuerpo: "Adjuntamos estado de cuenta por $260K con 47 días de vencimiento y una propuesta de plan de pagos." }, motivo: "Cobranza vencida de 47 días" },
+      { tool: "banco.transferir", args: { monto: 45000, destino: "Proveedor de hosting" }, motivo: "Adelantar pago para obtener descuento" },
+    ],
   },
   talento: {
     directorId: "talento",
@@ -77,6 +92,9 @@ export const DEMO_REPORTS: Record<DirectorId, Report> = {
       { para: "finanzas", texto: "Tenemos 2 candidatos backend finales; ¿hay caja para contratar este mes?" },
     ],
     escalar: "¿Aprobamos contratar al backend senior ya, antes de cerrar Altamar?",
+    acciones: [
+      { tool: "calendar.create_event", args: { titulo: "1:1 carga y delegación", con: "Mariana y Luis", cuando: "mañana 10:00" }, motivo: "Sin 1:1 con Luis en 6 semanas" },
+    ],
   },
 };
 

@@ -23,6 +23,12 @@ export interface Guide {
   pasos: string[];
 }
 
+export interface ProposedAction {
+  tool: string;
+  args: Record<string, unknown>;
+  motivo: string;
+}
+
 export interface Report {
   directorId: DirectorId;
   resumen: string;
@@ -30,6 +36,22 @@ export interface Report {
   alertas: string[];
   mensajes: { para: DirectorId; texto: string }[];
   escalar: string;
+  acciones: ProposedAction[];
+}
+
+export type Verdict = "permitido" | "aprobacion" | "bloqueado" | "cuarentena" | "redactado";
+
+export interface AirlockEntry {
+  seq: number;
+  node: NodeId;
+  verdict: Verdict;
+  layer: string;
+  tool: string;
+  reason: string;
+  detail?: string;
+  hash: string;
+  prev: string;
+  at: number;
 }
 
 export interface Decision {
@@ -55,5 +77,6 @@ export type CycleEvent =
   | { type: "message"; from: NodeId; to: NodeId; text: string }
   | { type: "report"; report: Report }
   | { type: "briefing"; briefing: Briefing }
+  | { type: "airlock"; entry: AirlockEntry }
   | { type: "error"; message: string }
   | { type: "done"; ms: number; tokens: number };
