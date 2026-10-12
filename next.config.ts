@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // drei <Html> desmonta raíces de React durante el doble render de StrictMode en dev.
+  reactStrictMode: false,
 };
 
 export default nextConfig;
