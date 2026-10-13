@@ -4,7 +4,7 @@
 
 **Demo en vivo:** https://orquesta-aldo.vercel.app
 
-![Una jornada completa en Orquesta: las unidades trabajan, Airlock frena lo peligroso y Nexo le entrega 3 decisiones al dueño](docs/orquesta.gif)
+![Dos jornadas en Orquesta: el dueño decide, Marco marca su avance y avisa un bloqueo, y la jornada siguiente lo recuerda](docs/orquesta.gif)
 
 Un viaje con guía no es lo mismo que uno sin guía: con alguien que te lleva de la mano conoces 5 o 6 veces más lugares. Orquesta aplica esa idea a una empresa: **directivos de IA** que revisan su área, guían paso a paso a cada persona de su equipo, se coordinan entre ellos y le suben al dueño **solo las decisiones que importan**.
 

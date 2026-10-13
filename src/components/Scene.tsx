@@ -476,6 +476,14 @@ function Controls() {
 
 export default function Scene() {
   const select = useOrquesta((s) => s.select);
+  // Al salir de la consola (p. ej. a /equipo) el canvas se destruye: si el portal
+  // siguiera apuntando a su contenedor viejo, al volver drei recrearía cada etiqueta a mitad del render.
+  useEffect(
+    () => () => {
+      labelPortal.current = null;
+    },
+    [],
+  );
   return (
     <Canvas
       camera={{ position: [0, 11, 27], fov: 42 }}
