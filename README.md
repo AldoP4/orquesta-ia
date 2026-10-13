@@ -4,6 +4,8 @@
 
 **Demo en vivo:** https://orquesta-aldo.vercel.app
 
+![Una jornada completa en Orquesta: las unidades trabajan, Airlock frena lo peligroso y Nexo le entrega 3 decisiones al dueño](docs/orquesta.gif)
+
 Un viaje con guía no es lo mismo que uno sin guía: con alguien que te lleva de la mano conoces 5 o 6 veces más lugares. Orquesta aplica esa idea a una empresa: **directivos de IA** que revisan su área, guían paso a paso a cada persona de su equipo, se coordinan entre ellos y le suben al dueño **solo las decisiones que importan**.
 
 Todo se opera desde una consola de mando con vista 3D en vivo: unidades, registro de eventos, inspector, línea de tiempo de la jornada y barra de estado. Atajos: `Enter` inicia la jornada, `A` abre Airlock y `Esc` cierra el inspector.
@@ -11,7 +13,7 @@ Todo se opera desde una consola de mando con vista 3D en vivo: unidades, registr
 ## Cómo funciona
 
 ```
-                 Ricardo (dueño)
+                  Aldo (dueño)
                        ▲  máximo 3 decisiones
                  Nexo (orquestador)
           ▲        ▲        ▲        ▲        ▲
@@ -40,11 +42,29 @@ Darle herramientas a los agentes es darles poder. **Airlock** es la membrana ent
 | 4 | **Límites** | Máximo de acciones por directivo y presupuesto de tokens por jornada. |
 | 5 | **Salida** | Oculta correos externos, teléfonos, tarjetas, RFC/CURP y API keys antes de que lleguen a la UI, a otro agente o al proveedor del LLM. |
 
-Cada decisión queda en una **bitácora de auditoría con hashes SHA-256 encadenados**: si alguien altera una entrada vieja, la cadena deja de cuadrar.
+Cada decisión queda en una **bitácora de auditoría con hashes SHA-256 encadenados**: si alguien altera una entrada vieja, la cadena deja de cuadrar. El botón **Verificar cadena** del panel de Airlock recalcula todos los hashes en tu navegador.
 
 La demo incluye ataques reales para que Airlock los atrape: un correo de phishing que le ordena al asistente exportar la lista de clientes a un Gmail, un directivo que intenta mandar el pipeline a un correo personal y otro que intenta hacer una transferencia bancaria.
 
 La política es declarativa ([`src/lib/airlock/policy.ts`](src/lib/airlock/policy.ts)) y el motor está en [`src/lib/airlock/index.ts`](src/lib/airlock/index.ts). El diseño se inspira en el patrón de *governance membrane* para sistemas multiagente y en [agent-airlock](https://pypi.org/project/agent-airlock/).
+
+### Tests
+
+```bash
+npm test
+```
+
+15 tests cubren las 5 capas de Airlock: cuarentena de *prompt injection* (también anidada y en inglés), deny-by-default, eliminación de argumentos no declarados, bloqueo de transferencias y de correos a dominios externos, aprobaciones, límites, redacción de datos sensibles y detección de una bitácora alterada. GitHub Actions corre TypeScript, lint y tests en cada push.
+
+## Qué es real y qué es simulado
+
+| Pieza | Estado |
+|---|---|
+| Directivos y orquestador | **Real** con un LLM (OpenRouter u Ollama). El link público corre en modo demo con respuestas pregrabadas, para no exponer una API key. |
+| Datos de Ingeniería (GitHub) | **Real**: commits, PRs e issues de este repo. |
+| CRM, Gmail, Slack, banco, RR. HH. | **Simulados** con datos coherentes entre áreas. Tienen forma de herramientas MCP para sustituirlos por servidores reales. |
+| Airlock | **Real**: cada lectura y acción pasa por las 5 capas y la bitácora es verificable. |
+| Ejecución de acciones aprobadas | **Simulada**: aprobar o decidir manda el mensaje por la torre, pero no envía correos ni toca sistemas externos. |
 
 ## Stack
 
@@ -52,7 +72,8 @@ La política es declarativa ([`src/lib/airlock/policy.ts`](src/lib/airlock/polic
 - **React Three Fiber**, drei y postprocessing (bloom) para la escena 3D
 - **Zustand** para el estado y **NDJSON streaming** para ver los eventos en tiempo real
 - **Cualquier LLM compatible con OpenAI**: OpenRouter en la nube u Ollama / LM Studio en local
-- **GitHub REST API** con datos reales de Ingeniería (opcional)
+- **GitHub REST API** con datos reales de Ingeniería (opcional, con caché de 5 minutos)
+- **Vitest** y **GitHub Actions** para tests y CI
 
 ## Correrlo
 
@@ -88,7 +109,8 @@ Atlas (Ingeniería) leerá los PRs, commits e issues reales de ese repo.
 ## Roadmap
 
 - [ ] Conectar servidores MCP reales (Slack, Google Calendar, Notion, Linear)
-- [ ] Que el dueño apruebe decisiones y que se propaguen hacia abajo
+- [x] Que el dueño apruebe decisiones y que regresen a la organización
+- [ ] Que las decisiones del dueño cambien la siguiente jornada
 - [ ] Una vista por trabajador: "tu guía de hoy"
 - [ ] Memoria entre jornadas: cada directivo recuerda lo que pidió ayer
 - [ ] Jornadas programadas (cron) y notificaciones

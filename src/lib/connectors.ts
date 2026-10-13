@@ -30,8 +30,13 @@ async function gh(path: string) {
   return res.json();
 }
 
+/** Sin token, GitHub permite 60 consultas por hora; cachear evita agotar el límite con varias visitas. */
+const GITHUB_TTL_MS = 5 * 60_000;
+let githubCache: { at: number; snap: Snapshot } | null = null;
+
 async function githubSnapshot(): Promise<Snapshot | null> {
   if (!process.env.GITHUB_REPO) return null;
+  if (githubCache && Date.now() - githubCache.at < GITHUB_TTL_MS) return githubCache.snap;
   try {
     const [pulls, commits, issues] = await Promise.all([
       gh("/pulls?state=open&per_page=15"),
@@ -57,7 +62,7 @@ async function githubSnapshot(): Promise<Snapshot | null> {
       autor: c.commit.author.name,
       hace_dias: daysAgo(c.commit.author.date),
     }));
-    return {
+    const snap: Snapshot = {
       real: true,
       calls: [
         { tool: "github.list_pull_requests", detail: `${process.env.GITHUB_REPO}: ${prs.length} PRs abiertos` },
@@ -66,6 +71,8 @@ async function githubSnapshot(): Promise<Snapshot | null> {
       ],
       data: { repo: process.env.GITHUB_REPO, pull_requests: prs, commits: recent, issues: realIssues },
     };
+    githubCache = { at: Date.now(), snap };
+    return snap;
   } catch {
     return null;
   }

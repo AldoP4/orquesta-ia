@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { CEO, COMPANY, DIRECTORS, DIRECTOR_BY_ID, OWNER } from "@/lib/company";
+import { verifyChain, type ChainCheck } from "@/lib/airlock/chain";
 import { useOrquesta, type FeedItem } from "@/lib/store";
 import type { AirlockEntry, Briefing, DirectorId, NodeId, NodeStatus, Verdict } from "@/lib/types";
 
@@ -70,6 +71,20 @@ function SectionLabel({ children, right }: { children: React.ReactNode; right?: 
 function Titlebar() {
   const { running, run, mode } = useOrquesta();
   const [demo, setDemo] = useState(false);
+  // null mientras preguntamos al servidor; false si no tiene LLM configurado.
+  const [liveAvailable, setLiveAvailable] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    fetch("/api/status")
+      .then((r) => r.json())
+      .then((s: { live: boolean }) => {
+        setLiveAvailable(s.live);
+        if (!s.live) setDemo(true);
+      })
+      .catch(() => setLiveAvailable(false));
+  }, []);
+
+  const liveTitle = liveAvailable === false ? "Esta instancia pública no tiene un LLM conectado: corre la jornada pregrabada" : undefined;
   return (
     <header className="titlebar">
       <div className="tb-left">
@@ -86,7 +101,14 @@ function Titlebar() {
       </div>
       <div className="tb-right">
         <div className="segmented" role="radiogroup" aria-label="Modo">
-          <button role="radio" aria-checked={!demo} className={!demo ? "on" : ""} onClick={() => setDemo(false)} disabled={running}>
+          <button
+            role="radio"
+            aria-checked={!demo}
+            className={!demo ? "on" : ""}
+            onClick={() => setDemo(false)}
+            disabled={running || liveAvailable === false}
+            title={liveTitle}
+          >
             En vivo
           </button>
           <button role="radio" aria-checked={demo} className={demo ? "on" : ""} onClick={() => setDemo(true)} disabled={running}>
@@ -419,6 +441,8 @@ function Approvals({ items }: { items: AirlockEntry[] }) {
 
 function OwnerView({ briefing }: { briefing: Briefing | null }) {
   const running = useOrquesta((s) => s.running);
+  const chosen = useOrquesta((s) => s.decisions);
+  const decide = useOrquesta((s) => s.decide);
   const pending = useOrquesta((s) => s.airlock).filter((e) => e.verdict === "aprobacion");
   return (
     <div className="view">
@@ -455,18 +479,49 @@ function OwnerView({ briefing }: { briefing: Briefing | null }) {
                 <span>Recomendación</span>
                 {dec.recomendacion}
               </div>
-              <div className="btnrow">
-                {dec.opciones.map((o, j) => (
-                  <button key={o} className={j === 0 ? "btn primary" : "btn"}>
-                    {o}
-                  </button>
-                ))}
-              </div>
+              {chosen[i] ? (
+                <div className="resolved">Decidido · {chosen[i]} · enviado a Nexo</div>
+              ) : (
+                <div className="btnrow">
+                  {dec.opciones.map((o, j) => (
+                    <button key={o} className={j === 0 ? "btn primary" : "btn"} onClick={() => decide(i, o)}>
+                      {o}
+                    </button>
+                  ))}
+                </div>
+              )}
             </article>
           ))}
           <Approvals items={pending} />
         </>
       )}
+    </div>
+  );
+}
+
+function ChainVerifier() {
+  const entries = useOrquesta((s) => s.airlock);
+  const [check, setCheck] = useState<ChainCheck | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => setCheck(null), [entries.length]);
+  if (!entries.length) return null;
+  const run = async () => {
+    setBusy(true);
+    setCheck(await verifyChain(entries));
+    setBusy(false);
+  };
+  return (
+    <div className={`verifier ${check ? (check.ok ? "ok" : "bad") : ""}`}>
+      <button className="btn" onClick={run} disabled={busy}>
+        {busy ? "Verificando…" : "Verificar cadena"}
+      </button>
+      <span>
+        {!check
+          ? "Recalcula cada SHA-256 en tu navegador."
+          : check.ok
+            ? `Íntegra · ${check.checked} de ${entries.length} hashes coinciden`
+            : `Rota en la entrada #${check.brokenAt}`}
+      </span>
     </div>
   );
 }
@@ -507,6 +562,7 @@ function AirlockView() {
         ))}
       </ol>
       <SectionLabel right={entries.length ? `${entries.length} entradas` : undefined}>Bitácora</SectionLabel>
+      <ChainVerifier />
       {entries.length === 0 ? (
         <p className="empty">Sin entradas todavía.</p>
       ) : (

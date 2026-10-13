@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { AirlockEntry, DirectorId, NodeId, ProposedAction, Verdict } from "../types";
+import { canonical, GENESIS } from "./chain";
 import { DOMINIOS_PERMITIDOS, LIMITES, POLICY } from "./policy";
 
 /**
@@ -25,16 +26,15 @@ import { DOMINIOS_PERMITIDOS, LIMITES, POLICY } from "./policy";
 
 export class AuditLog {
   private entries: AirlockEntry[] = [];
-  private last = "0".repeat(64);
+  private last = GENESIS;
 
   record(e: { node: NodeId; verdict: Verdict; layer: string; tool: string; reason: string; detail?: string }): AirlockEntry {
     const seq = this.entries.length + 1;
     const at = Date.now();
     const prev = this.last;
-    const hash = createHash("sha256")
-      .update(JSON.stringify({ seq, at, prev, ...e }))
-      .digest("hex");
-    const entry: AirlockEntry = { seq, at, prev, hash, ...e };
+    const base = { seq, at, prev, ...e };
+    const hash = createHash("sha256").update(canonical(base)).digest("hex");
+    const entry: AirlockEntry = { ...base, hash };
     this.entries.push(entry);
     this.last = hash;
     return entry;

@@ -4,7 +4,7 @@ export const COMPANY = {
   name: "Nébula Studio",
   description:
     "Agencia de desarrollo de software en Guadalajara, 14 personas. Hace apps web y móviles para PyMEs y startups de LATAM.",
-  owner: "Ricardo (dueño)",
+  owner: "Aldo (dueño)",
   goal: "Crecer 30% este trimestre sin quemar al equipo y sin perder margen.",
 };
 
@@ -91,7 +91,7 @@ export const CEO = {
 };
 
 export const OWNER = {
-  name: "Ricardo",
+  name: "Aldo",
   title: "Dueño",
   color: "#FF5B1F",
 };

@@ -50,6 +50,9 @@ interface State {
   /** Último veredicto, para que la membrana 3D destelle. */
   flash: { verdict: Verdict; id: number } | null;
   resolveApproval: (seq: number, decision: "aprobado" | "rechazado") => void;
+  /** Opción elegida por el dueño en cada decisión (índice → texto). */
+  decisions: Record<number, string>;
+  decide: (index: number, option: string) => void;
   select: (id: NodeId | "airlock" | null) => void;
   removePulse: (id: number) => void;
   run: (demo: boolean) => Promise<void>;
@@ -60,6 +63,12 @@ let seq = 0;
 export const useOrquesta = create<State>((set, get) => {
   const push = (item: Omit<FeedItem, "id" | "at">) =>
     set((s) => ({ feed: [...s.feed.slice(-120), { ...item, id: ++seq, at: Date.now() }] }));
+
+  /** Mensaje que nace en la UI (el dueño decide) y viaja por la torre como cualquier otro. */
+  const send = (from: NodeId, to: NodeId, text: string) => {
+    push({ kind: "message", from, to, text });
+    set((st) => ({ pulses: [...st.pulses, { id: ++seq, from, to, born: performance.now() }] }));
+  };
 
   const handle = (e: CycleEvent) => {
     switch (e.type) {
@@ -114,12 +123,22 @@ export const useOrquesta = create<State>((set, get) => {
     phase: 0,
     approvals: {},
     flash: null,
-    resolveApproval: (s, decision) => set((st) => ({ approvals: { ...st.approvals, [s]: decision } })),
+    decisions: {},
+    resolveApproval: (s, decision) => {
+      const entry = get().airlock.find((e) => e.seq === s);
+      set((st) => ({ approvals: { ...st.approvals, [s]: decision } }));
+      if (entry) send("dueno", entry.node, `${decision === "aprobado" ? "Aprobado" : "Rechazado"}: ${entry.tool}`);
+    },
+    decide: (index, option) => {
+      if (get().decisions[index]) return;
+      set((st) => ({ decisions: { ...st.decisions, [index]: option } }));
+      send("dueno", "ceo", `Decisión D-${String(index + 1).padStart(2, "0")}: ${option}`);
+    },
     select: (id) => set({ selected: id }),
     removePulse: (id) => set((s) => ({ pulses: s.pulses.filter((p) => p.id !== id) })),
     run: async (demo) => {
       if (get().running) return;
-      set({ running: true, statuses: IDLE, feed: [], reports: {}, briefing: null, stats: null, selected: null, pulses: [], airlock: [], approvals: {}, flash: null, phase: 0 });
+      set({ running: true, statuses: IDLE, feed: [], reports: {}, briefing: null, stats: null, selected: null, pulses: [], airlock: [], approvals: {}, decisions: {}, flash: null, phase: 0 });
       try {
         const res = await fetch("/api/cycle", { method: "POST", body: JSON.stringify({ demo }) });
         if (!res.body) throw new Error("Sin respuesta del servidor");

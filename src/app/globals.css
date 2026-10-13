@@ -318,3 +318,11 @@ button:disabled { cursor: default; }
   .run { padding: 0 10px; }
   .run span:nth-child(2) { display: none; }
 }
+
+.scene-loading { position: absolute; inset: 0; display: grid; place-content: center; grid-auto-flow: column; gap: 10px; align-items: center;
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); }
+.segmented button:disabled:not(.on) { opacity: 0.35; cursor: not-allowed; }
+.verifier { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-family: var(--mono); font-size: 11px; color: var(--dim); }
+.verifier.ok span { color: var(--ink); }
+.verifier.ok span::before { content: "■ "; color: var(--ink); }
+.verifier.bad span { color: var(--accent); }

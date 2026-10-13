@@ -102,7 +102,7 @@ export const DEMO_BRIEFING: Briefing = {
   estado: "Crecimiento a la vista, pero FarmaYa está drenando gente, margen y caja al mismo tiempo",
   salud: 64,
   resumen:
-    "Ricardo, hay un trato de $680K listo para firmar, pero el equipo no tiene capacidad y tu tech lead está al límite. FarmaYa es el origen de casi todo: te debe $260K, deja 11% de margen y su bug consume a ingeniería. Si resolvemos FarmaYa esta semana, Altamar es viable.",
+    "Aldo, hay un trato de $680K listo para firmar, pero el equipo no tiene capacidad y tu tech lead está al límite. FarmaYa es el origen de casi todo: te debe $260K, deja 11% de margen y su bug consume a ingeniería. Si resolvemos FarmaYa esta semana, Altamar es viable.",
   decisiones: [
     {
       titulo: "Contratar backend senior y firmar Altamar a 4 semanas",
