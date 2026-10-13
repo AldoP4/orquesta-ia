@@ -73,7 +73,7 @@ export interface Briefing {
 }
 
 export type CycleEvent =
-  | { type: "start"; mode: "live" | "demo"; model: string; githubReal: boolean }
+  | { type: "start"; mode: "live" | "demo"; model: string; githubReal: boolean; numero: number }
   | { type: "status"; node: NodeId; status: NodeStatus }
   | { type: "tool"; node: NodeId; tool: string; detail: string }
   | { type: "message"; from: NodeId; to: NodeId; text: string }
@@ -82,3 +82,21 @@ export type CycleEvent =
   | { type: "airlock"; entry: AirlockEntry }
   | { type: "error"; message: string }
   | { type: "done"; ms: number; tokens: number };
+
+/* --------------------------------- Memoria -------------------------------- */
+
+/** Lo que la organización recuerda de una jornada. Vive en el navegador del visitante. */
+export interface JornadaMemoria {
+  n: number;
+  at: number;
+  salud: number;
+  estado: string;
+  decisiones: { titulo: string; areas: DirectorId[]; elegida: string | null }[];
+}
+
+/** Lo que el cliente manda al servidor al iniciar una jornada. Pasa por Airlock. */
+export interface MemoryPayload {
+  numero: number;
+  jornadas: JornadaMemoria[];
+  progreso: { persona: string; director: DirectorId; hechos: string[]; pendientes: string[]; bloqueo?: string }[];
+}

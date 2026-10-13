@@ -8,7 +8,7 @@
 
 Un viaje con guía no es lo mismo que uno sin guía: con alguien que te lleva de la mano conoces 5 o 6 veces más lugares. Orquesta aplica esa idea a una empresa: **directivos de IA** que revisan su área, guían paso a paso a cada persona de su equipo, se coordinan entre ellos y le suben al dueño **solo las decisiones que importan**.
 
-Todo se opera desde una consola de mando con vista 3D en vivo: unidades, registro de eventos, inspector, línea de tiempo de la jornada y barra de estado. Atajos: `Enter` inicia la jornada, `A` abre Airlock y `Esc` cierra el inspector.
+Todo se opera desde una consola de mando con vista 3D en vivo: unidades, registro de eventos, inspector, línea de tiempo de la jornada y barra de estado. Atajos: `Enter` inicia la jornada, `A` abre Airlock, `M` abre la memoria y `Esc` cierra el inspector.
 
 ## Cómo funciona
 
@@ -29,6 +29,23 @@ Todo se opera desde una consola de mando con vista 3D en vivo: unidades, registr
 4. **Nexo (el orquestador)** cruza los 5 reportes, encuentra lo que ningún directivo ve por separado y entrega al dueño máximo 3 decisiones, cada una con contexto, recomendación y opciones.
 
 Los datos de la empresa ficticia (*Nébula Studio*) están diseñados con tensiones reales entre áreas, para que los agentes tengan algo que descubrir. Atlas (Ingeniería) lee datos **reales** de GitHub.
+
+## La otra mitad: la pantalla del equipo
+
+El dueño decide arriba; abajo, cada persona abre **Equipo** (`/equipo`) y ve su jornada: sus pasos de hoy, por qué importan, las decisiones del dueño que la afectan y un lugar para avisar si algo la bloquea.
+
+![Pantalla "Mi jornada" de Marco: pasos del día, un bloqueo avisado a Atlas y la decisión del dueño que lo afecta](docs/equipo.png)
+
+## Memoria entre jornadas
+
+La organización recuerda las últimas 5 jornadas: **lo que decidió el dueño, qué pasos completó cada persona y qué la bloqueó**. Al iniciar la siguiente jornada:
+
+- Cada directivo recibe solo lo de su área: las decisiones del dueño que lo afectan y el avance de su gente. Lo pendiente se retoma y los bloqueos se atienden primero.
+- Nexo recibe el historial de salud y no vuelve a preguntar lo que ya se decidió: da seguimiento.
+
+Por ejemplo, con el modelo real: Marco reportó *"No tengo acceso a los logs de pagos"* y dejó pendiente un pair review. En la jornada siguiente, Atlas le cambió la guía a *"Solicita acceso a logs de producción"* → *"Prepara el pair review con Sofía tras obtener acceso"*, y Nexo subió *"Desbloquear acceso a logs para Marco"* como primera decisión.
+
+La memoria vive en el navegador de cada visitante (así cada quien tiene su propia empresa en la demo pública, sin base de datos) y viaja al servidor en cada jornada. Por eso se trata como **dato no confiable**: se valida, se recorta y pasa por Airlock antes de llegar al modelo. La pestaña **Memoria** de la consola muestra el historial y permite borrarla.
 
 ## Airlock: la capa de seguridad
 
@@ -54,7 +71,7 @@ La política es declarativa ([`src/lib/airlock/policy.ts`](src/lib/airlock/polic
 npm test
 ```
 
-15 tests cubren las 5 capas de Airlock: cuarentena de *prompt injection* (también anidada y en inglés), deny-by-default, eliminación de argumentos no declarados, bloqueo de transferencias y de correos a dominios externos, aprobaciones, límites, redacción de datos sensibles y detección de una bitácora alterada. GitHub Actions corre TypeScript, lint y tests en cada push.
+23 tests: 15 cubren las 5 capas de Airlock: cuarentena de *prompt injection* (también anidada y en inglés), deny-by-default, eliminación de argumentos no declarados, bloqueo de transferencias y de correos a dominios externos, aprobaciones, límites, redacción de datos sensibles y detección de una bitácora alterada. Otros 8 cubren la memoria: validación de lo que manda el navegador, *prompt injection* escondido en la memoria, qué recuerda cada directivo y el arrastre de pendientes. GitHub Actions corre TypeScript, lint y tests en cada push.
 
 ## Qué es real y qué es simulado
 
@@ -65,6 +82,7 @@ npm test
 | CRM, Gmail, Slack, banco, RR. HH. | **Simulados** con datos coherentes entre áreas. Tienen forma de herramientas MCP para sustituirlos por servidores reales. |
 | Airlock | **Real**: cada lectura y acción pasa por las 5 capas y la bitácora es verificable. |
 | Ejecución de acciones aprobadas | **Simulada**: aprobar o decidir manda el mensaje por la torre, pero no envía correos ni toca sistemas externos. |
+| Memoria y avance del equipo | **Real**, guardada en el navegador del visitante; cambia la jornada siguiente. |
 
 ## Stack
 
@@ -110,9 +128,10 @@ Atlas (Ingeniería) leerá los PRs, commits e issues reales de ese repo.
 
 - [ ] Conectar servidores MCP reales (Slack, Google Calendar, Notion, Linear)
 - [x] Que el dueño apruebe decisiones y que regresen a la organización
-- [ ] Que las decisiones del dueño cambien la siguiente jornada
-- [ ] Una vista por trabajador: "tu guía de hoy"
-- [ ] Memoria entre jornadas: cada directivo recuerda lo que pidió ayer
+- [x] Que las decisiones del dueño cambien la siguiente jornada
+- [x] Una vista por trabajador: "tu guía de hoy"
+- [x] Memoria entre jornadas: cada directivo recuerda lo que pidió ayer
+- [ ] Memoria compartida en servidor (Postgres o Redis) para equipos reales
 - [ ] Jornadas programadas (cron) y notificaciones
 
 ---

@@ -40,11 +40,15 @@ Responde SOLO un JSON con esta forma exacta:
 Ids válidos para "para": ${IDS} (nunca el tuyo: ${d.id}). Español de México.`;
 }
 
-export function directorInput(d: Director, data: unknown) {
+export function directorInput(d: Director, data: unknown, memory = "") {
+  const mem = memory ? `
+
+Memoria de jornadas anteriores:
+${memory}` : "";
   return `Tu equipo:\n${d.team.map((w) => `- ${w.name} (${w.role}): ${w.focus}`).join("\n")}
 
 Datos de hoy de tus herramientas (${d.tools.join(", ")}):
-${JSON.stringify(data, null, 2)}`;
+${JSON.stringify(data, null, 2)}${mem}`;
 }
 
 export const CEO_SYSTEM = `Eres Nexo, el orquestador de IA de ${COMPANY.name}. Estás por encima de 5 directivos de IA y le reportas a ${COMPANY.owner}.
@@ -80,7 +84,7 @@ Responde SOLO un JSON con esta forma exacta:
 }
 Ids de áreas: ${IDS}. Español de México.`;
 
-export function ceoInput(reports: Report[], airlockNotes: string[] = []) {
+export function ceoInput(reports: Report[], airlockNotes: string[] = [], memory = "") {
   const directors = reports
     .map((r) => {
       const d = DIRECTOR_BY_ID[r.directorId];
@@ -91,8 +95,12 @@ Mensajes a otras áreas: ${r.mensajes.map((m) => `→ ${m.para}: ${m.texto}`).jo
 Pide decisión: ${r.escalar || "nada"}`;
     })
     .join("\n\n");
-  if (!airlockNotes.length) return directors;
-  return `${directors}
+  const withMemory = memory ? `## Memoria
+${memory}
+
+${directors}` : directors;
+  if (!airlockNotes.length) return withMemory;
+  return `${withMemory}
 
 ## Airlock (capa de seguridad): acciones de hoy
 ${airlockNotes.map((n) => `- ${n}`).join("\n")}

@@ -1,9 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { CEO, COMPANY, DIRECTORS, DIRECTOR_BY_ID, OWNER } from "@/lib/company";
 import { verifyChain, type ChainCheck } from "@/lib/airlock/chain";
-import { useOrquesta, type FeedItem } from "@/lib/store";
+import { hydrateOrquesta, useOrquesta, type FeedItem } from "@/lib/store";
 import type { AirlockEntry, Briefing, DirectorId, NodeId, NodeStatus, Verdict } from "@/lib/types";
 
 /* --------------------------------- Catálogo -------------------------------- */
@@ -95,9 +96,13 @@ function Titlebar() {
         </div>
         <span className="wordmark">Orquesta</span>
         <span className="tb-sep" />
-        <span className="tb-meta">
-          {COMPANY.name} <em>/</em> Consola de mando
-        </span>
+        <nav className="appnav" aria-label="Pantallas">
+          <Link href="/" className="on">
+            Consola
+          </Link>
+          <Link href="/equipo">Equipo</Link>
+        </nav>
+        <span className="tb-meta">{COMPANY.name}</span>
       </div>
       <div className="tb-right">
         <div className="segmented" role="radiogroup" aria-label="Modo">
@@ -439,6 +444,12 @@ function Approvals({ items }: { items: AirlockEntry[] }) {
   );
 }
 
+function JornadaTag() {
+  const numero = useOrquesta((s) => s.numero);
+  const has = useOrquesta((s) => s.jornadas.length > 0 || s.running);
+  return has ? <span className="mono-dim">· jornada #{numero}</span> : null;
+}
+
 function OwnerView({ briefing }: { briefing: Briefing | null }) {
   const running = useOrquesta((s) => s.running);
   const chosen = useOrquesta((s) => s.decisions);
@@ -447,7 +458,7 @@ function OwnerView({ briefing }: { briefing: Briefing | null }) {
   return (
     <div className="view">
       <div className="v-kicker">
-        <Code id="dueno" /> Bandeja del dueño
+        <Code id="dueno" /> Bandeja del dueño <JornadaTag />
       </div>
       <h2 className="v-title">Buenos días, {OWNER.name}.</h2>
       {!briefing ? (
@@ -589,16 +600,113 @@ function AirlockView() {
   );
 }
 
+function MemoryView() {
+  const jornadas = useOrquesta((s) => s.jornadas);
+  const progress = useOrquesta((s) => s.progress);
+  const blockers = useOrquesta((s) => s.blockers);
+  const reports = useOrquesta((s) => s.reports);
+  const clearMemory = useOrquesta((s) => s.clearMemory);
+
+  const guias = Object.values(reports).flatMap((r) => r?.guias ?? []);
+  const totalPasos = guias.reduce((n, g) => n + g.pasos.length, 0);
+  const hechos = guias.reduce((n, g) => n + (progress[g.persona]?.length ?? 0), 0);
+  const bloqueos = Object.entries(blockers);
+  const max = 100;
+
+  return (
+    <div className="view">
+      <div className="v-kicker">
+        <span className="code">MEM</span> Memoria de la organización
+      </div>
+      <h2 className="v-title">Memoria</h2>
+      <p className="v-lede">
+        Lo que la organización recuerda entre jornadas: tus decisiones, cuánto avanzó cada persona y qué la bloqueó. Se envía a los directivos al iniciar la siguiente jornada y pasa por Airlock antes de llegar al modelo.
+      </p>
+
+      <SectionLabel right={totalPasos ? `${hechos}/${totalPasos}` : undefined}>Avance del equipo · jornada actual</SectionLabel>
+      {totalPasos === 0 ? (
+        <p className="empty">Sin guía activa. Inicia una jornada.</p>
+      ) : (
+        <>
+          <div className="meter-bar wide">
+            {Array.from({ length: totalPasos }, (_, i) => (
+              <i key={i} className={i < hechos ? "on" : ""} />
+            ))}
+          </div>
+          <p className="small">
+            Lo que el equipo marque como hecho en la pantalla <Link href="/equipo">Equipo</Link> lo sabrán los directivos mañana. Lo pendiente se arrastra a la siguiente guía.
+          </p>
+          {bloqueos.length > 0 && (
+            <ul className="alerts">
+              {bloqueos.map(([persona, texto]) => (
+                <li key={persona}>
+                  <b>{persona}</b> reportó bloqueo: {texto}
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+
+      <SectionLabel right={jornadas.length ? `${jornadas.length} de 5` : undefined}>Jornadas recordadas</SectionLabel>
+      {jornadas.length === 0 ? (
+        <p className="empty">Todavía no hay jornadas guardadas.</p>
+      ) : (
+        <>
+          <div className="trend" aria-label="Salud por jornada">
+            {jornadas.map((j) => (
+              <div key={j.n} className="trend-col">
+                <span className="trend-bar" style={{ height: `${(j.salud / max) * 100}%` }} />
+                <span className="trend-n">#{j.n}</span>
+              </div>
+            ))}
+          </div>
+          {[...jornadas].reverse().map((j) => (
+            <div key={j.n} className="mem-row">
+              <div className="log-head">
+                <span className="ts">#{pad(j.n, 3)}</span>
+                <span className="mono-dim">{new Date(j.at).toLocaleString("es-MX", { dateStyle: "short", timeStyle: "short" })}</span>
+                <span className="layer-name">salud {j.salud}</span>
+              </div>
+              <div className="log-body">{j.estado}</div>
+              <ul className="mem-decisions">
+                {j.decisiones.map((d) => (
+                  <li key={d.titulo} className={d.elegida ? "chosen" : ""}>
+                    <span>{d.titulo}</span>
+                    <em>{d.elegida ? `→ ${d.elegida}` : "sin decidir"}</em>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </>
+      )}
+      <div className="btnrow mem-actions">
+        <button
+          className="btn"
+          onClick={() => {
+            if (window.confirm("¿Borrar la memoria? Se pierden las jornadas, decisiones y avances guardados en este navegador.")) clearMemory();
+          }}
+        >
+          Borrar memoria
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function Inspector() {
   const selected = useOrquesta((s) => s.selected);
   const select = useOrquesta((s) => s.select);
   const briefing = useOrquesta((s) => s.briefing);
   const airlockCount = useOrquesta((s) => s.airlock.length);
-  const unitId = selected && selected !== "dueno" && selected !== "airlock" ? selected : null;
-  const tab = selected === "airlock" ? "airlock" : unitId ? "unit" : "owner";
+  const memCount = useOrquesta((s) => s.jornadas.length);
+  const unitId = selected && selected !== "dueno" && selected !== "airlock" && selected !== "memoria" ? selected : null;
+  const tab = selected === "airlock" ? "airlock" : selected === "memoria" ? "memoria" : unitId ? "unit" : "owner";
 
   let body;
   if (tab === "airlock") body = <AirlockView />;
+  else if (tab === "memoria") body = <MemoryView />;
   else if (unitId === "ceo") body = <CeoView />;
   else if (unitId) body = <DirectorView id={unitId} />;
   else body = <OwnerView briefing={briefing} />;
@@ -611,6 +719,9 @@ function Inspector() {
         </button>
         <button className={tab === "airlock" ? "on" : ""} onClick={() => select("airlock")}>
           Airlock {airlockCount > 0 && <span className="badge">{airlockCount}</span>}
+        </button>
+        <button className={tab === "memoria" ? "on" : ""} onClick={() => select("memoria")}>
+          Memoria {memCount > 0 && <span className="badge">{memCount}</span>}
         </button>
         <button className={tab === "unit" ? "on" : ""} disabled={!unitId}>
           {unitId ? UNIT[unitId].name : "Unidad"}
@@ -674,12 +785,17 @@ export default function Hud() {
   const select = useOrquesta((s) => s.select);
 
   useEffect(() => {
+    hydrateOrquesta();
+  }, []);
+
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLElement && /INPUT|TEXTAREA/.test(e.target.tagName)) return;
       // Enter equivale a pulsar el botón, así respeta el modo elegido (En vivo / Demo).
       if (e.key === "Enter" && !(e.target instanceof HTMLButtonElement)) document.querySelector<HTMLButtonElement>(".run")?.click();
       else if (e.key === "Escape") select(null);
       else if (e.key.toLowerCase() === "a") select("airlock");
+      else if (e.key.toLowerCase() === "m") select("memoria");
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);

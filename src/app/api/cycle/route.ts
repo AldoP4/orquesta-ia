@@ -5,7 +5,8 @@ import { DIRECTORS } from "@/lib/company";
 import { snapshotFor } from "@/lib/connectors";
 import { DEMO_BRIEFING, DEMO_REPORTS } from "@/lib/demo";
 import { chatJson, hasLlm, llmConfig } from "@/lib/llm";
-import type { Briefing, CycleEvent, Director, Report } from "@/lib/types";
+import { carryOverDemo, carryOverDemoBriefing, ceoMemory, directorMemory, memoryStats, sanitizeMemory } from "@/lib/memory";
+import type { Briefing, CycleEvent, Director, MemoryPayload, Report } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -14,7 +15,9 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const jitter = (min: number, max: number) => min + Math.random() * (max - min);
 
 export async function POST(req: Request) {
-  const { demo: forceDemo } = await req.json().catch(() => ({ demo: false }));
+  const body = await req.json().catch(() => ({}));
+  const forceDemo = Boolean(body.demo);
+  let memory = sanitizeMemory(body.memoria);
   const live = hasLlm() && !forceDemo;
   const started = Date.now();
   let tokens = 0;
@@ -58,16 +61,16 @@ export async function POST(req: Request) {
         }
         if (live && !overBudget) {
           try {
-            const res = await chatJson<Partial<Report>>(directorPrompt(d), directorInput(d, inRedact.clean));
+            const res = await chatJson<Partial<Report>>(directorPrompt(d), directorInput(d, inRedact.clean, directorMemory(d.id, memory)));
             tokens += res.tokens;
             report = normalizeReport(d.id, res.data);
           } catch (err) {
             emit({ type: "error", message: `${d.name}: ${(err as Error).message}. Uso respaldo.` });
-            report = DEMO_REPORTS[d.id];
+            report = carryOverDemo(DEMO_REPORTS[d.id], memory);
           }
         } else {
           await sleep(jitter(1400, 3200));
-          report = DEMO_REPORTS[d.id];
+          report = carryOverDemo(DEMO_REPORTS[d.id], memory);
         }
 
         // Las acciones se evalúan con sus argumentos originales; la UI solo ve la versión redactada.
@@ -110,8 +113,27 @@ export async function POST(req: Request) {
           mode: live ? "live" : "demo",
           model: live ? llmConfig().model : "demo",
           githubReal: Boolean(process.env.GITHUB_REPO),
+          numero: memory.numero,
         });
         emit({ type: "status", node: "ceo", status: "working" });
+
+        // La memoria la manda el navegador: es dato no confiable y pasa por Airlock como cualquier otro.
+        if (memory.jornadas.length || memory.progreso.length) {
+          const q = quarantine(memory);
+          for (const hit of q.hits) {
+            guard({ node: "ceo", verdict: "cuarentena", layer: "Entrada", tool: "memoria del cliente", reason: "Intento de prompt injection en la memoria guardada", detail: hit });
+          }
+          const r = redact(q.clean as MemoryPayload);
+          if (r.found.length) guard({ node: "ceo", verdict: "redactado", layer: "Salida", tool: "memoria del cliente", reason: `Datos sensibles ocultos en la memoria: ${r.found.join(", ")}` });
+          memory = r.clean;
+          const st = memoryStats(memory);
+          emit({
+            type: "tool",
+            node: "ceo",
+            tool: "memoria.leer",
+            detail: `Jornada #${memory.numero} · ${st.decididas} decisiones previas · ${st.pendientes} pasos pendientes · ${st.bloqueos} bloqueos`,
+          });
+        }
 
         const reports = await Promise.all(DIRECTORS.map(runDirector));
 
@@ -121,16 +143,16 @@ export async function POST(req: Request) {
         let briefing: Briefing;
         if (live) {
           try {
-            const res = await chatJson<Partial<Briefing>>(CEO_SYSTEM, ceoInput(reports, airlockNotes));
+            const res = await chatJson<Partial<Briefing>>(CEO_SYSTEM, ceoInput(reports, airlockNotes, ceoMemory(memory)));
             tokens += res.tokens;
             briefing = normalizeBriefing(res.data);
           } catch (err) {
             emit({ type: "error", message: `Nexo: ${(err as Error).message}. Uso respaldo.` });
-            briefing = DEMO_BRIEFING;
+            briefing = carryOverDemoBriefing(DEMO_BRIEFING, memory);
           }
         } else {
           await sleep(2200);
-          briefing = DEMO_BRIEFING;
+          briefing = carryOverDemoBriefing(DEMO_BRIEFING, memory);
         }
 
         emit({ type: "status", node: "ceo", status: "done" });

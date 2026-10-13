@@ -326,3 +326,94 @@ button:disabled { cursor: default; }
 .verifier.ok span { color: var(--ink); }
 .verifier.ok span::before { content: "■ "; color: var(--ink); }
 .verifier.bad span { color: var(--accent); }
+
+/* ============================ Navegación de app ============================ */
+.appnav { display: flex; gap: 2px; }
+.appnav a { font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--dim); padding: 5px 9px; border-radius: 1px; text-decoration: none; }
+.appnav a:hover { color: var(--ink-2); }
+.appnav a.on { color: var(--ink); background: var(--pane-3); box-shadow: inset 0 -2px 0 var(--accent); }
+
+/* ================================ Memoria ================================= */
+.meter-bar.wide { display: flex; gap: 2px; height: 10px; margin: 2px 0 8px; }
+.meter-bar.wide i { flex: 1; }
+.trend { display: flex; align-items: flex-end; gap: 6px; height: 74px; padding: 6px 0 0; margin-bottom: 8px; border-bottom: 1px solid var(--line); }
+.trend-col { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 4px; max-width: 48px; }
+.trend-bar { width: 100%; background: var(--ink-2); min-height: 2px; }
+.trend-col:last-child .trend-bar { background: var(--accent); }
+.trend-n { font-family: var(--mono); font-size: 10px; color: var(--dim); padding-bottom: 4px; }
+.mem-row { padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+.mem-decisions { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.mem-decisions li { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; color: var(--muted); }
+.mem-decisions em { font-style: normal; font-family: var(--mono); font-size: 11px; color: var(--dim); text-align: right; }
+.mem-decisions li.chosen span { color: var(--ink-2); }
+.mem-decisions li.chosen em { color: var(--accent); }
+.mem-actions { margin-top: 18px; }
+.alerts li b { font-weight: 600; }
+
+/* ============================ Pantalla de equipo =========================== */
+.wshell {
+  position: fixed; inset: 0; display: grid;
+  grid-template-columns: 300px 1fr 380px; grid-template-rows: 44px 1fr 26px;
+  grid-template-areas: "tb tb tb" "left main right" "sb sb sb";
+}
+.wshell .pane-left { overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
+.w-people .roster-row { width: 100%; grid-template-columns: 1fr auto; padding: 8px 14px; }
+.w-people .r-role { grid-column: 1; }
+.w-mini { grid-column: 2; grid-row: 1 / 3; display: flex; align-items: center; gap: 6px; }
+.w-main { grid-area: main; background: var(--bg); padding: 34px 48px 48px; }
+.w-main > * { max-width: 680px; }
+.w-hello { font-size: 36px; margin-top: 14px; }
+.w-picker { display: flex; align-items: center; gap: 8px; }
+.w-picker select {
+  font: inherit; font-family: var(--mono); font-size: 11.5px; color: var(--ink); background: var(--pane-2);
+  border: 1px solid var(--line-2); border-radius: var(--r); padding: 4px 8px;
+}
+.w-progress { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }
+.w-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.w-step {
+  width: 100%; display: grid; grid-template-columns: 22px 26px 1fr; gap: 10px; align-items: start; text-align: left;
+  padding: 14px 14px; background: var(--pane); border: 1px solid var(--line); border-radius: var(--r); transition: border-color 0.15s, background 0.15s;
+}
+.w-step:hover { border-color: var(--line-2); background: var(--pane-2); }
+.w-check { width: 18px; height: 18px; border: 1.5px solid var(--muted); display: grid; place-items: center; font-size: 12px; font-weight: 700; color: #140802; margin-top: 1px; }
+.w-step.done .w-check { background: var(--accent); border-color: var(--accent); }
+.w-n { font-family: var(--mono); font-size: 11px; color: var(--accent); padding-top: 2px; }
+.w-text { font-size: 14.5px; line-height: 1.5; color: var(--ink); }
+.w-step.done .w-text { color: var(--dim); text-decoration: line-through; text-decoration-color: var(--line-2); }
+.w-step.done .w-n { color: var(--dim); }
+.w-blocker { margin-top: 16px; padding: 14px; border: 1px dashed var(--line-2); display: flex; flex-direction: column; gap: 8px; }
+.w-blocker label { font-size: 12.5px; color: var(--muted); }
+.w-blocker-row { display: flex; gap: 6px; }
+.w-blocker input {
+  flex: 1; font: inherit; font-size: 13px; color: var(--ink); background: var(--pane); border: 1px solid var(--line-2);
+  border-radius: var(--r); padding: 7px 10px; outline: none;
+}
+.w-blocker input:focus { border-color: var(--accent); }
+.w-blocker .btn.primary:disabled { opacity: 0.4; cursor: not-allowed; }
+.w-blocker.sent { border-style: solid; border-color: var(--accent-line); background: var(--accent-bg); flex-direction: row; justify-content: space-between; align-items: center; }
+.w-blocker.sent p { margin: 6px 0 0; font-size: 13px; }
+.w-decision { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; margin-bottom: 4px; background: var(--pane); border-left: 2px solid var(--line-2); font-size: 13px; }
+.w-decision span { font-size: 12px; color: var(--dim); font-family: var(--mono); }
+.w-decision.chosen { border-left-color: var(--accent); }
+.w-decision.chosen span { color: var(--accent); }
+.w-empty { margin-top: 24px; padding: 20px; border: 1px dashed var(--line-2); display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
+.w-empty p { margin: 0; color: var(--muted); }
+.w-minibar { display: flex; gap: 2px; width: 70px; height: 6px; }
+.w-minibar i { flex: 1; background: var(--line); }
+.w-minibar i.on { background: var(--accent); }
+a.btn { text-decoration: none; display: inline-block; }
+
+@media (max-width: 1280px) {
+  .wshell { grid-template-columns: 260px 1fr 320px; }
+  .w-main { padding: 28px 28px 40px; }
+}
+@media (max-width: 980px) {
+  .wshell { grid-template-columns: 1fr; grid-template-areas: "tb" "main" "sb"; }
+  .wshell .pane-left, .wshell .pane-right, .wshell .tb-meta, .wshell .tb-sep { display: none; }
+  .w-main { padding: 22px 16px 32px; }
+  .w-hello { font-size: 28px; }
+}
+@media (max-width: 520px) {
+  .wordmark, .wshell .w-picker .mono-dim { display: none; }
+}
+.w-people .section { margin: 0; padding: 12px 14px 8px; }
