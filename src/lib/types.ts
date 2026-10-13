@@ -12,6 +12,8 @@ export interface Director {
   id: DirectorId;
   name: string;
   title: string;
+  /** Código corto de la unidad, estilo instrumento: ING, VEN… */
+  code: string;
   color: string;
   tools: string[];
   team: Worker[];

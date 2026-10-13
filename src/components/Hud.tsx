@@ -1,212 +1,321 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CEO, COMPANY, DIRECTORS, DIRECTOR_BY_ID, OWNER } from "@/lib/company";
 import { useOrquesta, type FeedItem } from "@/lib/store";
-import type { AirlockEntry, Briefing, DirectorId, NodeId, Verdict } from "@/lib/types";
+import type { AirlockEntry, Briefing, DirectorId, NodeId, NodeStatus, Verdict } from "@/lib/types";
 
-const VERDICT: Record<Verdict, { label: string; color: string }> = {
-  permitido: { label: "permitido", color: "#34d399" },
-  aprobacion: { label: "requiere aprobación", color: "#fbbf24" },
-  bloqueado: { label: "bloqueado", color: "#f87171" },
-  cuarentena: { label: "cuarentena", color: "#c084fc" },
-  redactado: { label: "datos ocultos", color: "#60a5fa" },
+/* --------------------------------- Catálogo -------------------------------- */
+
+const UNIT: Record<NodeId, { code: string; name: string; role: string }> = {
+  dueno: { code: "OWN", name: OWNER.name, role: "Dueño" },
+  ceo: { code: "ORQ", name: CEO.name, role: "Orquestador" },
+  ...(Object.fromEntries(
+    DIRECTORS.map((d) => [d.id, { code: d.code, name: d.name, role: d.title.replace(/^Directiv[oa] de /, "") }]),
+  ) as Record<DirectorId, { code: string; name: string; role: string }>),
+};
+
+const VERDICT: Record<Verdict, { label: string; tone: "ok" | "warn" | "stop" | "muted" }> = {
+  permitido: { label: "Permitido", tone: "ok" },
+  aprobacion: { label: "Aprobación", tone: "warn" },
+  bloqueado: { label: "Bloqueado", tone: "stop" },
+  cuarentena: { label: "Cuarentena", tone: "stop" },
+  redactado: { label: "Redactado", tone: "muted" },
 };
 
 const LAYERS = [
   { name: "Entrada", desc: "Escanea los datos de las herramientas y pone en cuarentena los intentos de prompt injection antes de que lleguen al modelo." },
-  { name: "Contrato", desc: "Deny-by-default: la herramienta debe existir, el área debe ser su dueña y los argumentos deben tener el tipo correcto. Quita argumentos no declarados." },
-  { name: "Política", desc: "Lectura y escritura interna pasan solas. Lo crítico (correos externos, datos, sueldos) espera al dueño. Mover dinero o mandar datos fuera se bloquea." },
+  { name: "Contrato", desc: "Deny-by-default. La herramienta debe existir, el área debe ser su dueña y los argumentos deben tener el tipo correcto." },
+  { name: "Política", desc: "Lectura y escritura interna pasan. Lo crítico espera al dueño. Dinero y datos hacia dominios no permitidos se bloquean." },
   { name: "Límites", desc: "Máximo de acciones por directivo y presupuesto de tokens por jornada." },
-  { name: "Salida", desc: "Oculta correos externos, teléfonos, tarjetas, RFC/CURP y API keys antes de que lleguen a la UI, a otro agente o al proveedor del LLM." },
+  { name: "Salida", desc: "Oculta correos externos, teléfonos, tarjetas, RFC/CURP y API keys antes de la UI, otros agentes o el LLM." },
 ];
 
-function VerdictChip({ v }: { v: Verdict }) {
+const PHASES = ["Recolección", "Análisis", "Coordinación", "Síntesis", "Decisión"];
+
+const STATUS: Record<NodeStatus, string> = { idle: "En espera", working: "Activo", done: "Listo", error: "Error" };
+
+const pad = (n: number, w = 2) => String(n).padStart(w, "0");
+const time = (ms: number) => {
+  const d = new Date(ms);
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+};
+
+/* -------------------------------- Primitivas ------------------------------- */
+
+function Code({ id }: { id: NodeId | null | undefined }) {
+  if (!id) return null;
+  return <span className="code">{UNIT[id].code}</span>;
+}
+
+function Tag({ v }: { v: Verdict }) {
+  return <span className={`tag tone-${VERDICT[v].tone}`}>{VERDICT[v].label}</span>;
+}
+
+function Dot({ status }: { status: NodeStatus }) {
+  return <i className={`dot st-${status}`} />;
+}
+
+function SectionLabel({ children, right }: { children: React.ReactNode; right?: React.ReactNode }) {
   return (
-    <span className="verdict" style={{ ["--v" as string]: VERDICT[v].color }}>
-      {VERDICT[v].label}
-    </span>
+    <div className="section">
+      <span>{children}</span>
+      {right && <span className="section-right">{right}</span>}
+    </div>
   );
 }
 
-const NODE_META: Record<NodeId, { name: string; color: string }> = {
-  ceo: { name: CEO.name, color: "#93c5fd" },
-  dueno: { name: OWNER.name, color: OWNER.color },
-  ...(Object.fromEntries(DIRECTORS.map((d) => [d.id, { name: d.name, color: d.color }])) as Record<
-    DirectorId,
-    { name: string; color: string }
-  >),
-};
+/* --------------------------------- Titlebar -------------------------------- */
 
-/* --------------------------------- Top bar -------------------------------- */
-
-function TopBar() {
-  const { running, run, mode, model, statuses } = useOrquesta();
-  const done = Object.values(statuses).filter((s) => s === "done").length;
+function Titlebar() {
+  const { running, run, mode } = useOrquesta();
+  const [demo, setDemo] = useState(false);
   return (
-    <header className="topbar glass">
-      <div className="brand">
-        <div className="brand-mark" />
-        <div>
-          <div className="brand-name">ORQUESTA</div>
-          <div className="brand-sub">Directivos de IA que guían a tu equipo</div>
+    <header className="titlebar">
+      <div className="tb-left">
+        <div className="mark" aria-hidden>
+          <span />
+          <span />
+          <span />
         </div>
+        <span className="wordmark">Orquesta</span>
+        <span className="tb-sep" />
+        <span className="tb-meta">
+          {COMPANY.name} <em>/</em> Consola de mando
+        </span>
       </div>
-      <div className="company">
-        <span className="company-name">{COMPANY.name}</span>
-        <span className="company-meta">14 personas · 5 directivos IA · 1 orquestador</span>
-      </div>
-      <div className="actions">
-        {mode && (
-          <span className={`chip ${mode === "live" ? "chip-live" : ""}`}>
-            <i />
-            {mode === "live" ? model : "demo"}
-          </span>
-        )}
-        {running && <span className="progress-text">{done}/7 nodos</span>}
-        <button className="btn-ghost" disabled={running} onClick={() => run(true)}>
-          Demo
+      <div className="tb-right">
+        <div className="segmented" role="radiogroup" aria-label="Modo">
+          <button role="radio" aria-checked={!demo} className={!demo ? "on" : ""} onClick={() => setDemo(false)} disabled={running}>
+            En vivo
+          </button>
+          <button role="radio" aria-checked={demo} className={demo ? "on" : ""} onClick={() => setDemo(true)} disabled={running}>
+            Demo
+          </button>
+        </div>
+        <button className="run" disabled={running} onClick={() => run(demo)}>
+          <span className="run-icon">{running ? <span className="spin" /> : "▶"}</span>
+          <span>{running ? "Jornada en curso" : "Iniciar jornada"}</span>
+          <kbd>↵</kbd>
         </button>
-        <button className="btn-primary" disabled={running} onClick={() => run(false)}>
-          {running ? <span className="spinner" /> : <span className="play">▶</span>}
-          {running ? "Jornada en curso" : "Iniciar jornada"}
-        </button>
+        {mode && <span className={`mode-flag ${mode}`}>{mode === "live" ? "LIVE" : "DEMO"}</span>}
       </div>
     </header>
   );
 }
 
-/* ---------------------------------- Feed ---------------------------------- */
+/* ------------------------------ Panel izquierdo ---------------------------- */
 
-function Who({ id }: { id: NodeId | null | undefined }) {
-  if (!id) return null;
-  const m = NODE_META[id];
+function Roster() {
+  const statuses = useOrquesta((s) => s.statuses);
+  const selected = useOrquesta((s) => s.selected);
+  const select = useOrquesta((s) => s.select);
+  const order: NodeId[] = ["dueno", "ceo", ...DIRECTORS.map((d) => d.id)];
   return (
-    <span className="who" style={{ color: m.color }}>
-      {m.name}
-    </span>
+    <div className="roster">
+      {order.map((id, i) => (
+        <button key={id} className={`roster-row ${selected === id ? "sel" : ""}`} onClick={() => select(id)}>
+          <span className="idx">{pad(i)}</span>
+          <Code id={id} />
+          <span className="r-name">{UNIT[id].name}</span>
+          <span className="r-role">{UNIT[id].role}</span>
+          <span className={`r-status st-${statuses[id]}`}>
+            <Dot status={statuses[id]} />
+            {STATUS[statuses[id]]}
+          </span>
+        </button>
+      ))}
+    </div>
   );
 }
 
-function FeedRow({ item }: { item: FeedItem }) {
-  if (item.kind === "system") return <div className="feed-system">{item.text}</div>;
-  if (item.kind === "error") return <div className="feed-error">⚠ {item.text}</div>;
+function LogRow({ item }: { item: FeedItem }) {
+  const t = <span className="ts">{time(item.at)}</span>;
+  if (item.kind === "system")
+    return (
+      <div className="log sys">
+        {t}
+        <span>{item.text}</span>
+      </div>
+    );
+  if (item.kind === "error")
+    return (
+      <div className="log err">
+        {t}
+        <span>{item.text}</span>
+      </div>
+    );
   if (item.kind === "airlock")
     return (
-      <div className="feed-row feed-airlock" style={{ ["--v" as string]: VERDICT[item.verdict!].color }}>
-        <span className="shield">⬢</span>
+      <div className={`log al tone-${VERDICT[item.verdict!].tone}`}>
+        {t}
         <div>
-          <span className="airlock-word">Airlock</span> <VerdictChip v={item.verdict!} /> <Who id={item.from} />
-          <div className="mono tool">{item.text}</div>
-          <div className="feed-detail">{item.detail}</div>
+          <div className="log-head">
+            <span className="al-mark">AL</span>
+            <Tag v={item.verdict!} />
+            <Code id={item.from} />
+            <span className="mono-dim">{item.text}</span>
+          </div>
+          <div className="log-body">{item.detail}</div>
         </div>
       </div>
     );
   if (item.kind === "tool")
     return (
-      <div className="feed-row">
-        <span className="dot" style={{ background: NODE_META[item.from!].color }} />
+      <div className="log tool">
+        {t}
         <div>
-          <Who id={item.from} /> <span className="mono tool">{item.text}</span>
-          <div className="feed-detail">{item.detail}</div>
+          <div className="log-head">
+            <Code id={item.from} />
+            <span className="mono-dim">{item.text}</span>
+          </div>
+          <div className="log-body dim">{item.detail}</div>
         </div>
       </div>
     );
   return (
-    <div className="feed-row feed-msg">
-      <span className="dot" style={{ background: NODE_META[item.from!].color }} />
+    <div className="log msg">
+      {t}
       <div>
-        <Who id={item.from} /> <span className="arrow">→</span> <Who id={item.to} />
-        <div className="feed-text">{item.text}</div>
+        <div className="log-head">
+          <Code id={item.from} />
+          <span className="arrow">→</span>
+          <Code id={item.to} />
+        </div>
+        <div className="log-body">{item.text}</div>
       </div>
     </div>
   );
 }
 
-function Feed() {
+function Log() {
   const feed = useOrquesta((s) => s.feed);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     ref.current?.scrollTo({ top: ref.current.scrollHeight, behavior: "smooth" });
   }, [feed.length]);
   return (
-    <aside className="panel panel-left glass">
-      <div className="panel-head">
-        <span className="live-dot" />
-        Canal de directivos
-      </div>
-      <div className="feed" ref={ref}>
-        {feed.length === 0 ? (
-          <p className="empty">
-            Aquí verás en tiempo real qué herramientas consulta cada directivo y qué se dicen entre ellos.
-          </p>
-        ) : (
-          feed.map((item) => <FeedRow key={item.id} item={item} />)
-        )}
-      </div>
+    <div className="logwrap" ref={ref}>
+      {feed.length === 0 ? (
+        <p className="empty">
+          Sin eventos. Inicia una jornada para ver qué consulta cada unidad, qué se dicen entre ellas y qué deja pasar Airlock.
+        </p>
+      ) : (
+        feed.map((item) => <LogRow key={item.id} item={item} />)
+      )}
+    </div>
+  );
+}
+
+function LeftPanel() {
+  const count = useOrquesta((s) => s.feed.length);
+  return (
+    <aside className="pane pane-left">
+      <SectionLabel right="7">Unidades</SectionLabel>
+      <Roster />
+      <SectionLabel right={pad(count, 3)}>Registro</SectionLabel>
+      <Log />
     </aside>
   );
 }
 
-/* --------------------------------- Details -------------------------------- */
+/* ------------------------------ Escenario (stage) --------------------------- */
 
-function DirectorDetail({ id }: { id: DirectorId }) {
+function Stage() {
+  const phase = useOrquesta((s) => s.phase);
+  const running = useOrquesta((s) => s.running);
+  return (
+    <section className="stage-frame" aria-label="Vista 3D">
+      <div className="corner tl">
+        <span>VISTA</span> Torre de mando
+      </div>
+      <div className="corner tr">Arrastra para orbitar · Rueda para acercar</div>
+      <span className="crop c1" />
+      <span className="crop c2" />
+      <span className="crop c3" />
+      <span className="crop c4" />
+      <div className="timeline">
+        {PHASES.map((p, i) => {
+          const n = i + 1;
+          const state = phase > n || (phase === n && !running) ? "done" : phase === n ? "now" : "todo";
+          return (
+            <div key={p} className={`ph ${state}`}>
+              <span className="ph-n">{pad(n)}</span>
+              <span className="ph-l">{p}</span>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+/* ---------------------------------- Inspector ------------------------------- */
+
+function DirectorView({ id }: { id: DirectorId }) {
   const d = DIRECTOR_BY_ID[id];
   const report = useOrquesta((s) => s.reports[id]);
   const status = useOrquesta((s) => s.statuses[id]);
   return (
-    <div className="detail" style={{ ["--c" as string]: d.color }}>
-      <div className="detail-kicker">{d.title}</div>
-      <h2 className="detail-title">{d.name}</h2>
-      <p className="detail-mission">{d.mission}</p>
-      <div className="chips">
+    <div className="view">
+      <div className="v-kicker">
+        <Code id={id} /> {d.title}
+      </div>
+      <h2 className="v-title">{d.name}</h2>
+      <p className="v-lede">{d.mission}</p>
+
+      <SectionLabel>Herramientas</SectionLabel>
+      <div className="toolset">
         {d.tools.map((t) => (
-          <span key={t} className="tool-chip mono">
-            {t}
-          </span>
+          <span key={t}>{t}</span>
         ))}
       </div>
 
       {!report ? (
-        <div className="waiting">
-          {status === "working" ? "Analizando su área…" : "Inicia la jornada para ver su reporte."}
-          <div className="team-list">
-            {d.team.map((w) => (
-              <div key={w.name} className="team-row">
-                <b>{w.name}</b> · {w.role}
-                <span>{w.focus}</span>
-              </div>
-            ))}
-          </div>
-        </div>
+        <>
+          <SectionLabel right={status === "working" ? "analizando" : undefined}>Equipo</SectionLabel>
+          <table className="tbl">
+            <tbody>
+              {d.team.map((w) => (
+                <tr key={w.name}>
+                  <td className="strong">{w.name}</td>
+                  <td>{w.role}</td>
+                  <td className="dim">{w.focus}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
       ) : (
         <>
-          <p className="summary">{report.resumen}</p>
+          <SectionLabel>Estado</SectionLabel>
+          <p className="prose">{report.resumen}</p>
           {report.alertas.length > 0 && (
-            <div className="alerts">
+            <ul className="alerts">
               {report.alertas.map((a) => (
-                <div key={a} className="alert">
-                  {a}
-                </div>
+                <li key={a}>{a}</li>
               ))}
-            </div>
+            </ul>
           )}
-          <div className="section-label">Guía de hoy para su equipo</div>
+          <SectionLabel right={`${report.guias.length} personas`}>Guía del día</SectionLabel>
           {report.guias.map((g) => (
             <div key={g.persona} className="guide">
-              <div className="guide-name">{g.persona}</div>
+              <div className="g-name">{g.persona}</div>
               <ol>
                 {g.pasos.map((p, i) => (
-                  <li key={i}>{p}</li>
+                  <li key={i}>
+                    <span>{pad(i + 1)}</span>
+                    {p}
+                  </li>
                 ))}
               </ol>
             </div>
           ))}
           {report.escalar && (
-            <div className="escalate">
-              <span>Escala al orquestador</span>
-              {report.escalar}
-            </div>
+            <>
+              <SectionLabel>Escala al orquestador</SectionLabel>
+              <p className="callout">{report.escalar}</p>
+            </>
           )}
         </>
       )}
@@ -214,109 +323,61 @@ function DirectorDetail({ id }: { id: DirectorId }) {
   );
 }
 
-function CeoDetail() {
+function CeoView() {
   const reports = useOrquesta((s) => s.reports);
   const briefing = useOrquesta((s) => s.briefing);
   return (
-    <div className="detail" style={{ ["--c" as string]: "#93c5fd" }}>
-      <div className="detail-kicker">{CEO.title}</div>
-      <h2 className="detail-title">{CEO.name}</h2>
-      <p className="detail-mission">
-        Recibe a los 5 directivos, conecta lo que ninguno ve solo y le sube al dueño solo lo que importa.
-      </p>
-      <div className="section-label">Escalaciones recibidas</div>
-      {DIRECTORS.map((d) => (
-        <div key={d.id} className="escalation-row" style={{ ["--c" as string]: d.color }}>
-          <b>{d.name}</b>
-          <span>{reports[d.id] ? reports[d.id]!.escalar || "Sin escalaciones" : "pendiente…"}</span>
-        </div>
-      ))}
-      {briefing && <p className="summary">{briefing.estado}</p>}
+    <div className="view">
+      <div className="v-kicker">
+        <Code id="ceo" /> Orquestador
+      </div>
+      <h2 className="v-title">{CEO.name}</h2>
+      <p className="v-lede">Recibe a las 5 unidades, conecta lo que ninguna ve sola y le sube al dueño solo lo que importa.</p>
+      <SectionLabel>Escalaciones recibidas</SectionLabel>
+      <table className="tbl">
+        <tbody>
+          {DIRECTORS.map((d) => (
+            <tr key={d.id}>
+              <td>
+                <Code id={d.id} />
+              </td>
+              <td className={reports[d.id] ? "" : "dim"}>
+                {reports[d.id] ? reports[d.id]!.escalar || "Sin escalaciones" : "Pendiente"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {briefing && (
+        <>
+          <SectionLabel>Titular</SectionLabel>
+          <p className="prose">{briefing.estado}</p>
+        </>
+      )}
     </div>
   );
 }
 
-function Gauge({ value }: { value: number }) {
-  const r = 34;
-  const c = 2 * Math.PI * r;
-  const color = value >= 75 ? "#34d399" : value >= 50 ? "#facc15" : "#f87171";
+function Meter({ value }: { value: number }) {
+  const ticks = 40;
+  const lit = Math.round((value / 100) * ticks);
   return (
-    <svg width="84" height="84" viewBox="0 0 84 84" className="gauge">
-      <circle cx="42" cy="42" r={r} stroke="rgba(148,163,184,.15)" strokeWidth="7" fill="none" />
-      <circle
-        cx="42"
-        cy="42"
-        r={r}
-        stroke={color}
-        strokeWidth="7"
-        fill="none"
-        strokeLinecap="round"
-        strokeDasharray={c}
-        strokeDashoffset={c * (1 - value / 100)}
-        transform="rotate(-90 42 42)"
-        style={{ filter: `drop-shadow(0 0 6px ${color})`, transition: "stroke-dashoffset 1.2s ease" }}
-      />
-      <text x="42" y="47" textAnchor="middle" className="gauge-text">
+    <div className="meter" aria-label={`Salud ${value} de 100`}>
+      <div className="meter-num">
         {value}
-      </text>
-    </svg>
-  );
-}
-
-function AirlockDetail() {
-  const entries = useOrquesta((s) => s.airlock);
-  const counts = entries.reduce<Record<string, number>>((acc, e) => {
-    acc[e.verdict] = (acc[e.verdict] ?? 0) + 1;
-    return acc;
-  }, {});
-  return (
-    <div className="detail" style={{ ["--c" as string]: "#5eead4" }}>
-      <div className="detail-kicker">Capa de seguridad</div>
-      <h2 className="detail-title">Airlock</h2>
-      <p className="detail-mission">
-        La membrana entre los agentes y el mundo. Todo lo que un directivo lee o quiere hacer pasa por 5 capas, y cada decisión queda en una bitácora con hashes encadenados.
-      </p>
-      <div className="verdict-grid">
-        {(Object.keys(VERDICT) as Verdict[]).map((v) => (
-          <div key={v} style={{ ["--v" as string]: VERDICT[v].color }}>
-            <b>{counts[v] ?? 0}</b>
-            <span>{VERDICT[v].label}</span>
-          </div>
+        <span>/100</span>
+      </div>
+      <div className="meter-bar">
+        {Array.from({ length: ticks }, (_, i) => (
+          <i key={i} className={i < lit ? "on" : ""} />
         ))}
       </div>
-      <div className="section-label">Las 5 capas</div>
-      {LAYERS.map((l, i) => (
-        <div key={l.name} className="layer">
-          <span className="layer-n">{i + 1}</span>
-          <div>
-            <b>{l.name}</b>
-            <p>{l.desc}</p>
-          </div>
-        </div>
-      ))}
-      <div className="section-label">Bitácora de auditoría</div>
-      {entries.length === 0 ? (
-        <p className="waiting">Inicia la jornada para ver cada decisión de Airlock.</p>
-      ) : (
-        <div className="audit">
-          {entries.map((e) => (
-            <div key={e.seq} className="audit-row" style={{ ["--v" as string]: VERDICT[e.verdict].color }}>
-              <div className="audit-head">
-                <span className="mono">#{e.seq}</span>
-                <VerdictChip v={e.verdict} />
-                <Who id={e.node} />
-                <span className="audit-layer">{e.layer}</span>
-              </div>
-              <div className="mono tool">{e.tool}</div>
-              <div className="audit-reason">{e.reason}</div>
-              {e.detail && <div className="feed-detail">{e.detail}</div>}
-              <div className="hash mono" title={"hash " + e.hash + "\nprev " + e.prev}>
-                {e.prev.slice(0, 8)} → {e.hash.slice(0, 8)}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+      <div className="meter-scale">
+        <span>Crisis</span>
+        <span>Serio</span>
+        <span>Tensión</span>
+        <span>Sano</span>
+      </div>
     </div>
   );
 }
@@ -327,24 +388,24 @@ function Approvals({ items }: { items: AirlockEntry[] }) {
   if (!items.length) return null;
   return (
     <>
-      <div className="section-label">⬢ Airlock: acciones que esperan tu aprobación</div>
+      <SectionLabel right={`${items.filter((e) => !approvals[e.seq]).length} pendientes`}>Airlock · Aprobaciones</SectionLabel>
       {items.map((e) => {
         const state = approvals[e.seq];
         return (
-          <div key={e.seq} className="approval">
-            <div className="audit-head">
-              <Who id={e.node} />
-              <span className="mono tool">{e.tool}</span>
+          <div key={e.seq} className={`approval ${state ?? ""}`}>
+            <div className="log-head">
+              <Code id={e.node} />
+              <span className="mono-dim">{e.tool}</span>
             </div>
-            {e.detail && <p className="decision-context">{e.detail}</p>}
+            {e.detail && <p className="small">{e.detail}</p>}
             {state ? (
-              <div className={"approval-state " + state}>{state === "aprobado" ? "✓ Aprobado, se ejecuta" : "✕ Rechazado"}</div>
+              <div className="resolved">{state === "aprobado" ? "Aprobado · se ejecuta" : "Rechazado"}</div>
             ) : (
-              <div className="options">
-                <button className="opt opt-main" onClick={() => resolve(e.seq, "aprobado")}>
+              <div className="btnrow">
+                <button className="btn primary" onClick={() => resolve(e.seq, "aprobado")}>
                   Aprobar
                 </button>
-                <button className="opt" onClick={() => resolve(e.seq, "rechazado")}>
+                <button className="btn" onClick={() => resolve(e.seq, "rechazado")}>
                   Rechazar
                 </button>
               </div>
@@ -356,55 +417,52 @@ function Approvals({ items }: { items: AirlockEntry[] }) {
   );
 }
 
-function OwnerInbox({ briefing }: { briefing: Briefing | null }) {
+function OwnerView({ briefing }: { briefing: Briefing | null }) {
   const running = useOrquesta((s) => s.running);
-  const airlock = useOrquesta((s) => s.airlock);
-  const pending = airlock.filter((e) => e.verdict === "aprobacion");
+  const pending = useOrquesta((s) => s.airlock).filter((e) => e.verdict === "aprobacion");
   return (
-    <div className="detail" style={{ ["--c" as string]: OWNER.color }}>
-      <div className="detail-kicker">Bandeja del dueño</div>
-      <h2 className="detail-title">Buenos días, {OWNER.name}</h2>
+    <div className="view">
+      <div className="v-kicker">
+        <Code id="dueno" /> Bandeja del dueño
+      </div>
+      <h2 className="v-title">Buenos días, {OWNER.name}.</h2>
       {!briefing ? (
-        <p className="detail-mission">
+        <p className="v-lede">
           {running
-            ? "Tus directivos están trabajando. Nexo te subirá solo las decisiones que importan."
-            : "Presiona «Iniciar jornada»: 5 directivos de IA revisan su área, guían a su gente, se coordinan entre ellos y Nexo te entrega máximo 3 decisiones."}
+            ? "Las unidades están trabajando. Nexo te subirá solo las decisiones que importan."
+            : "Cinco directivos de IA revisan su área, guían a su gente y se coordinan. Nexo te entrega máximo tres decisiones."}
         </p>
       ) : (
         <>
-          <div className="health">
-            <Gauge value={briefing.salud} />
-            <div>
-              <div className="health-label">Salud de la empresa</div>
-              <div className="health-state">{briefing.estado}</div>
-            </div>
-          </div>
-          <p className="summary">{briefing.resumen}</p>
-          <div className="section-label">Decisiones que necesitan tu firma</div>
+          <Meter value={briefing.salud} />
+          <p className="headline">{briefing.estado}</p>
+          <p className="prose">{briefing.resumen}</p>
+          <SectionLabel right={`${briefing.decisiones.length}`}>Decisiones</SectionLabel>
           {briefing.decisiones.map((dec, i) => (
-            <div key={i} className={`decision u-${dec.urgencia}`}>
-              <div className="decision-head">
-                <span className="urgency">{dec.urgencia}</span>
-                <div className="area-dots">
+            <article key={i} className={`decision u-${dec.urgencia}`}>
+              <header>
+                <span className="d-n">D-{pad(i + 1)}</span>
+                <span className={`urg u-${dec.urgencia}`}>{dec.urgencia}</span>
+                <span className="d-areas">
                   {dec.areas.map((a) => (
-                    <span key={a} title={DIRECTOR_BY_ID[a].title} style={{ background: DIRECTOR_BY_ID[a].color }} />
+                    <Code key={a} id={a} />
                   ))}
-                </div>
-              </div>
-              <div className="decision-title">{dec.titulo}</div>
-              <p className="decision-context">{dec.contexto}</p>
-              <div className="recommendation">
-                <span>Recomendación de Nexo</span>
+                </span>
+              </header>
+              <h3>{dec.titulo}</h3>
+              <p className="small">{dec.contexto}</p>
+              <div className="reco">
+                <span>Recomendación</span>
                 {dec.recomendacion}
               </div>
-              <div className="options">
+              <div className="btnrow">
                 {dec.opciones.map((o, j) => (
-                  <button key={o} className={j === 0 ? "opt opt-main" : "opt"}>
+                  <button key={o} className={j === 0 ? "btn primary" : "btn"}>
                     {o}
                   </button>
                 ))}
               </div>
-            </div>
+            </article>
           ))}
           <Approvals items={pending} />
         </>
@@ -413,76 +471,171 @@ function OwnerInbox({ briefing }: { briefing: Briefing | null }) {
   );
 }
 
-function DetailPanel() {
-  const selected = useOrquesta((s) => s.selected);
-  const briefing = useOrquesta((s) => s.briefing);
-  const select = useOrquesta((s) => s.select);
-  let body;
-  if (selected === "ceo") body = <CeoDetail />;
-  else if (selected === "airlock") body = <AirlockDetail />;
-  else if (selected && selected !== "dueno") body = <DirectorDetail id={selected} />;
-  else body = <OwnerInbox briefing={briefing} />;
+function AirlockView() {
+  const entries = useOrquesta((s) => s.airlock);
+  const counts = entries.reduce<Record<string, number>>((acc, e) => {
+    acc[e.verdict] = (acc[e.verdict] ?? 0) + 1;
+    return acc;
+  }, {});
   return (
-    <aside className="panel panel-right glass">
-      {selected && (
-        <button className="close" onClick={() => select(null)} aria-label="Cerrar">
-          ×
-        </button>
+    <div className="view">
+      <div className="v-kicker">
+        <span className="code">AL</span> Capa de seguridad
+      </div>
+      <h2 className="v-title">Airlock</h2>
+      <p className="v-lede">
+        La membrana entre los agentes y el mundo. Cada lectura y cada acción pasa por cinco capas y queda en una bitácora con hashes encadenados.
+      </p>
+      <div className="counters">
+        {(Object.keys(VERDICT) as Verdict[]).map((v) => (
+          <div key={v} className={`tone-${VERDICT[v].tone}`}>
+            <b>{pad(counts[v] ?? 0)}</b>
+            <span>{VERDICT[v].label}</span>
+          </div>
+        ))}
+      </div>
+      <SectionLabel>Capas</SectionLabel>
+      <ol className="layers">
+        {LAYERS.map((l, i) => (
+          <li key={l.name}>
+            <span className="l-n">L{i + 1}</span>
+            <div>
+              <b>{l.name}</b>
+              <p>{l.desc}</p>
+            </div>
+          </li>
+        ))}
+      </ol>
+      <SectionLabel right={entries.length ? `${entries.length} entradas` : undefined}>Bitácora</SectionLabel>
+      {entries.length === 0 ? (
+        <p className="empty">Sin entradas todavía.</p>
+      ) : (
+        <div className="audit">
+          {entries.map((e) => (
+            <div key={e.seq} className={`audit-row tone-${VERDICT[e.verdict].tone}`}>
+              <div className="log-head">
+                <span className="ts">#{pad(e.seq, 3)}</span>
+                <Tag v={e.verdict} />
+                <Code id={e.node} />
+                <span className="layer-name">{e.layer}</span>
+              </div>
+              <div className="mono-dim">{e.tool}</div>
+              <div className="log-body">{e.reason}</div>
+              {e.detail && <div className="log-body dim">{e.detail}</div>}
+              <div className="hash" title={`hash ${e.hash}\nprev ${e.prev}`}>
+                {e.prev.slice(0, 10)} <em>→</em> {e.hash.slice(0, 10)}
+              </div>
+            </div>
+          ))}
+        </div>
       )}
-      <div className="panel-scroll">{body}</div>
+    </div>
+  );
+}
+
+function Inspector() {
+  const selected = useOrquesta((s) => s.selected);
+  const select = useOrquesta((s) => s.select);
+  const briefing = useOrquesta((s) => s.briefing);
+  const airlockCount = useOrquesta((s) => s.airlock.length);
+  const unitId = selected && selected !== "dueno" && selected !== "airlock" ? selected : null;
+  const tab = selected === "airlock" ? "airlock" : unitId ? "unit" : "owner";
+
+  let body;
+  if (tab === "airlock") body = <AirlockView />;
+  else if (unitId === "ceo") body = <CeoView />;
+  else if (unitId) body = <DirectorView id={unitId} />;
+  else body = <OwnerView briefing={briefing} />;
+
+  return (
+    <aside className="pane pane-right">
+      <nav className="tabs">
+        <button className={tab === "owner" ? "on" : ""} onClick={() => select("dueno")}>
+          Dueño
+        </button>
+        <button className={tab === "airlock" ? "on" : ""} onClick={() => select("airlock")}>
+          Airlock {airlockCount > 0 && <span className="badge">{airlockCount}</span>}
+        </button>
+        <button className={tab === "unit" ? "on" : ""} disabled={!unitId}>
+          {unitId ? UNIT[unitId].name : "Unidad"}
+        </button>
+      </nav>
+      <div className="pane-scroll" key={`${tab}-${unitId ?? ""}`}>
+        {body}
+      </div>
     </aside>
   );
 }
 
-/* --------------------------------- Footer --------------------------------- */
+/* --------------------------------- Statusbar -------------------------------- */
 
-function AirlockButton() {
-  const entries = useOrquesta((s) => s.airlock);
-  const select = useOrquesta((s) => s.select);
-  const stopped = entries.filter((e) => e.verdict === "bloqueado" || e.verdict === "cuarentena").length;
-  const pending = entries.filter((e) => e.verdict === "aprobacion").length;
-  return (
-    <button className="airlock-btn glass" onClick={() => select("airlock")}>
-      <span className="shield">⬢</span>
-      <b>Airlock</b>
-      <span>{entries.length} revisiones</span>
-      {stopped > 0 && <span className="pill red">{stopped} frenadas</span>}
-      {pending > 0 && <span className="pill amber">{pending} por aprobar</span>}
-    </button>
-  );
+function Clock() {
+  const [now, setNow] = useState<number | null>(null);
+  useEffect(() => {
+    setNow(Date.now());
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  return <span>{now ? time(now) : "--:--:--"}</span>;
 }
 
-function Footer() {
-  const stats = useOrquesta((s) => s.stats);
-  const mode = useOrquesta((s) => s.mode);
-  const select = useOrquesta((s) => s.select);
+function Statusbar() {
+  const { running, mode, model, stats, airlock, githubReal } = useOrquesta();
+  const stopped = airlock.filter((e) => e.verdict === "bloqueado" || e.verdict === "cuarentena").length;
+  const pending = airlock.filter((e) => e.verdict === "aprobacion").length;
   return (
-    <footer className="footer">
-      <div className="legend glass">
-        {DIRECTORS.map((d) => (
-          <button key={d.id} onClick={() => select(d.id)} style={{ ["--c" as string]: d.color }}>
-            <i />
-            {d.name}
-          </button>
-        ))}
-      </div>
-      <AirlockButton />
-      {stats && (
-        <div className="stats glass mono">
-          {(stats.ms / 1000).toFixed(1)}s · {mode === "live" ? `${stats.tokens.toLocaleString()} tokens` : "sin costo (demo)"}
-        </div>
+    <footer className="statusbar">
+      <span className={`sb-state ${running ? "busy" : ""}`}>
+        <i />
+        {running ? "Procesando" : "Listo"}
+      </span>
+      <span>
+        <em>Modelo</em> {mode === "live" ? model : mode === "demo" ? "demo" : "—"}
+      </span>
+      <span>
+        <em>Tokens</em> {stats && mode === "live" ? stats.tokens.toLocaleString("es-MX") : "—"}
+      </span>
+      <span>
+        <em>Duración</em> {stats ? `${(stats.ms / 1000).toFixed(1)} s` : "—"}
+      </span>
+      <span>
+        <em>Airlock</em> {airlock.length} rev · <b className={stopped ? "hot" : ""}>{stopped} frenadas</b> · {pending} pend.
+      </span>
+      <span className="sb-grow" />
+      {githubReal && (
+        <span>
+          <em>GitHub</em> conectado
+        </span>
       )}
+      <Clock />
     </footer>
   );
 }
 
+/* ------------------------------------ App ----------------------------------- */
+
 export default function Hud() {
+  const select = useOrquesta((s) => s.select);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLElement && /INPUT|TEXTAREA/.test(e.target.tagName)) return;
+      // Enter equivale a pulsar el botón, así respeta el modo elegido (En vivo / Demo).
+      if (e.key === "Enter" && !(e.target instanceof HTMLButtonElement)) document.querySelector<HTMLButtonElement>(".run")?.click();
+      else if (e.key === "Escape") select(null);
+      else if (e.key.toLowerCase() === "a") select("airlock");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [select]);
+
   return (
-    <div className="hud">
-      <TopBar />
-      <Feed />
-      <DetailPanel />
-      <Footer />
+    <div className="shell">
+      <Titlebar />
+      <LeftPanel />
+      <Stage />
+      <Inspector />
+      <Statusbar />
     </div>
   );
 }

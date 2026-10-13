@@ -44,6 +44,8 @@ interface State {
   selected: NodeId | "airlock" | null;
   stats: { ms: number; tokens: number } | null;
   airlock: AirlockEntry[];
+  /** 0 sin iniciar · 1 recolección · 2 análisis · 3 coordinación · 4 síntesis · 5 decisión */
+  phase: number;
   approvals: Record<number, "aprobado" | "rechazado">;
   /** Último veredicto, para que la membrana 3D destelle. */
   flash: { verdict: Verdict; id: number } | null;
@@ -62,24 +64,26 @@ export const useOrquesta = create<State>((set, get) => {
   const handle = (e: CycleEvent) => {
     switch (e.type) {
       case "start":
-        set({ mode: e.mode, model: e.model, githubReal: e.githubReal });
+        set({ mode: e.mode, model: e.model, githubReal: e.githubReal, phase: 1 });
         push({ kind: "system", from: null, text: e.mode === "live" ? `Jornada en vivo con ${e.model}` : "Jornada en modo demo" });
         break;
       case "status":
         set((s) => ({ statuses: { ...s.statuses, [e.node]: e.status } }));
         break;
       case "tool":
+        if (e.node === "ceo") set((st) => ({ phase: Math.max(st.phase, 4) }));
         push({ kind: "tool", from: e.node, text: e.tool, detail: e.detail });
         break;
       case "message":
+        if (e.from !== "ceo" && e.to !== "ceo") set((st) => ({ phase: Math.max(st.phase, 3) }));
         push({ kind: "message", from: e.from, to: e.to, text: e.text });
         set((s) => ({ pulses: [...s.pulses, { id: ++seq, from: e.from, to: e.to, born: performance.now() }] }));
         break;
       case "report":
-        set((s) => ({ reports: { ...s.reports, [e.report.directorId]: e.report } }));
+        set((s) => ({ reports: { ...s.reports, [e.report.directorId]: e.report }, phase: Math.max(s.phase, 2) }));
         break;
       case "briefing":
-        set({ briefing: e.briefing, selected: "dueno" });
+        set({ briefing: e.briefing, selected: "dueno", phase: 5 });
         break;
       case "airlock":
         set((st) => ({ airlock: [...st.airlock, e.entry], flash: { verdict: e.entry.verdict, id: ++seq } }));
@@ -107,6 +111,7 @@ export const useOrquesta = create<State>((set, get) => {
     selected: null,
     stats: null,
     airlock: [],
+    phase: 0,
     approvals: {},
     flash: null,
     resolveApproval: (s, decision) => set((st) => ({ approvals: { ...st.approvals, [s]: decision } })),
@@ -114,7 +119,7 @@ export const useOrquesta = create<State>((set, get) => {
     removePulse: (id) => set((s) => ({ pulses: s.pulses.filter((p) => p.id !== id) })),
     run: async (demo) => {
       if (get().running) return;
-      set({ running: true, statuses: IDLE, feed: [], reports: {}, briefing: null, stats: null, selected: null, pulses: [], airlock: [], approvals: {}, flash: null });
+      set({ running: true, statuses: IDLE, feed: [], reports: {}, briefing: null, stats: null, selected: null, pulses: [], airlock: [], approvals: {}, flash: null, phase: 0 });
       try {
         const res = await fetch("/api/cycle", { method: "POST", body: JSON.stringify({ demo }) });
         if (!res.body) throw new Error("Sin respuesta del servidor");

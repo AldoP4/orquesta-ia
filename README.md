@@ -4,7 +4,7 @@
 
 Un viaje con guía no es lo mismo que uno sin guía: con alguien que te lleva de la mano conoces 5 o 6 veces más lugares. Orquesta aplica esa idea a una empresa: **directivos de IA** que revisan su área, guían paso a paso a cada persona de su equipo, se coordinan entre ellos y le suben al dueño **solo las decisiones que importan**.
 
-Todo se ve en vivo en una torre de mando 3D.
+Todo se opera desde una consola de mando con vista 3D en vivo: unidades, registro de eventos, inspector, línea de tiempo de la jornada y barra de estado. Atajos: `Enter` inicia la jornada, `A` abre Airlock y `Esc` cierra el inspector.
 
 ## Cómo funciona
 
@@ -28,7 +28,7 @@ Los datos de la empresa ficticia (*Nébula Studio*) están diseñados con tensio
 
 ## Airlock: la capa de seguridad
 
-Darle herramientas a los agentes es darles poder. **Airlock** es la membrana entre los agentes y el mundo; en la escena 3D es el anillo hexagonal que destella con cada veredicto. Todo lo que un directivo lee o quiere hacer pasa por 5 capas:
+Darle herramientas a los agentes es darles poder. **Airlock** es la membrana entre los agentes y el mundo; en la vista 3D es el anillo hexagonal que se enciende en naranja cuando frena algo. Todo lo que un directivo lee o quiere hacer pasa por 5 capas:
 
 | # | Capa | Qué hace |
 |---|------|----------|

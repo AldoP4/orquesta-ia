@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
-import { JetBrains_Mono, Space_Grotesk } from "next/font/google";
+import { Archivo, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 
-const sans = Space_Grotesk({ variable: "--font-sans", subsets: ["latin"] });
-const mono = JetBrains_Mono({ variable: "--font-mono", subsets: ["latin"] });
+const sans = Archivo({ variable: "--font-sans", subsets: ["latin"] });
+const mono = IBM_Plex_Mono({ variable: "--font-mono", subsets: ["latin"], weight: ["400", "500", "600"] });
 
 export const metadata: Metadata = {
-  title: "Orquesta · Directivos de IA",
+  title: "Orquesta · Consola de mando",
   description: "Directivos de IA que guían a tu equipo, se coordinan entre ellos y le suben al dueño solo las decisiones que importan.",
 };
 

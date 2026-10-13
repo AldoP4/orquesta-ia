@@ -11,9 +11,10 @@ export const COMPANY = {
 export const DIRECTORS: Director[] = [
   {
     id: "ingenieria",
+    code: "ING",
     name: "Atlas",
     title: "Directivo de Ingeniería",
-    color: "#38bdf8",
+    color: "#ECEAE4",
     tools: ["github.list_pull_requests", "github.list_commits", "github.list_issues"],
     mission: "Que el código salga a tiempo, revisado y sin deuda que explote después.",
     team: [
@@ -25,9 +26,10 @@ export const DIRECTORS: Director[] = [
   },
   {
     id: "ventas",
+    code: "VEN",
     name: "Vega",
     title: "Directiva de Ventas",
-    color: "#f472b6",
+    color: "#ECEAE4",
     tools: ["crm.list_deals", "gmail.search_threads", "calendar.list_events"],
     mission: "Cerrar los tratos correctos, no cualquier trato.",
     team: [
@@ -37,9 +39,10 @@ export const DIRECTORS: Director[] = [
   },
   {
     id: "operaciones",
+    code: "OPS",
     name: "Orión",
     title: "Directivo de Operaciones",
-    color: "#a78bfa",
+    color: "#ECEAE4",
     tools: ["linear.list_projects", "calendar.list_events", "slack.read_channel"],
     mission: "Que cada proyecto se entregue en fecha y el cliente lo sepa antes de preguntar.",
     team: [
@@ -50,9 +53,10 @@ export const DIRECTORS: Director[] = [
   },
   {
     id: "finanzas",
+    code: "FIN",
     name: "Fénix",
     title: "Directivo de Finanzas",
-    color: "#facc15",
+    color: "#ECEAE4",
     tools: ["contabilidad.cuentas_por_cobrar", "banco.flujo_de_caja", "sheets.read_budget"],
     mission: "Que el dinero entre a tiempo y cada proyecto deje margen.",
     team: [
@@ -62,9 +66,10 @@ export const DIRECTORS: Director[] = [
   },
   {
     id: "talento",
+    code: "TAL",
     name: "Lyra",
     title: "Directiva de Talento",
-    color: "#34d399",
+    color: "#ECEAE4",
     tools: ["hr.workload", "hr.time_off", "slack.pulse_survey"],
     mission: "Que la gente crezca, esté bien y no se vaya.",
     team: [
@@ -82,11 +87,11 @@ export const DIRECTOR_BY_ID = Object.fromEntries(DIRECTORS.map((d) => [d.id, d])
 export const CEO = {
   name: "Nexo",
   title: "Orquestador",
-  color: "#f8fafc",
+  color: "#ECEAE4",
 };
 
 export const OWNER = {
   name: "Ricardo",
   title: "Dueño",
-  color: "#fbbf24",
+  color: "#FF5B1F",
 };

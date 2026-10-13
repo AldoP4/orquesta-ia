@@ -1,18 +1,32 @@
 "use client";
 
-import { Canvas, useFrame } from "@react-three/fiber";
-import { Grid, Html, Line, OrbitControls, Sparkles, Stars } from "@react-three/drei";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { Edges, Grid, Html, Line, OrbitControls } from "@react-three/drei";
 import { Bloom, EffectComposer, Vignette } from "@react-three/postprocessing";
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { CEO, DIRECTORS, OWNER } from "@/lib/company";
 import { useOrquesta, type Pulse } from "@/lib/store";
 import type { Director, NodeId, NodeStatus } from "@/lib/types";
 
+/* --------------------------------- Paleta --------------------------------- */
+
+const C = {
+  bg: "#0b0b0a",
+  body: "#1f1f1d",
+  body2: "#2a2a27",
+  line: "#3a3935",
+  dim: "#5d5c57",
+  ink: "#ecebe6",
+  accent: "#ff5b1f",
+};
+
+/* -------------------------------- Geometría -------------------------------- */
+
 const RING = 8.5;
 const POS: Record<NodeId, THREE.Vector3> = {
   ceo: new THREE.Vector3(0, 6.5, 0),
-  dueno: new THREE.Vector3(0, 11.5, 0),
+  dueno: new THREE.Vector3(0, 11.2, 0),
   ...(Object.fromEntries(
     DIRECTORS.map((d, i) => {
       const a = (i / DIRECTORS.length) * Math.PI * 2 - Math.PI / 2;
@@ -20,12 +34,6 @@ const POS: Record<NodeId, THREE.Vector3> = {
     }),
   ) as Record<string, THREE.Vector3>),
 } as Record<NodeId, THREE.Vector3>;
-
-const COLOR: Record<NodeId, string> = {
-  ceo: CEO.color,
-  dueno: OWNER.color,
-  ...(Object.fromEntries(DIRECTORS.map((d) => [d.id, d.color])) as Record<string, string>),
-} as Record<NodeId, string>;
 
 function curveBetween(from: NodeId, to: NodeId) {
   const a = POS[from];
@@ -37,41 +45,97 @@ function curveBetween(from: NodeId, to: NodeId) {
   return new THREE.QuadraticBezierCurve3(a.clone(), mid, b.clone());
 }
 
-/* ---------------------------------- Links --------------------------------- */
+const circlePoints = (r: number, n = 128, y = 0) =>
+  Array.from({ length: n + 1 }, (_, i) => {
+    const a = (i / n) * Math.PI * 2;
+    return new THREE.Vector3(Math.cos(a) * r, y, Math.sin(a) * r);
+  });
+
+/* ---------------------------------- Piso ---------------------------------- */
+
+/** Piso tipo radar: anillos de medición, marcas de escala y un barrido lento. */
+function Floor() {
+  const sweep = useRef<THREE.Mesh>(null);
+  const running = useOrquesta((s) => s.running);
+  const ticks = useMemo(() => {
+    const pts: number[] = [];
+    const n = 120;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      const long = i % 10 === 0;
+      const r1 = 13.2;
+      const r2 = long ? 13.9 : 13.5;
+      pts.push(Math.cos(a) * r1, 0, Math.sin(a) * r1, Math.cos(a) * r2, 0, Math.sin(a) * r2);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
+    return g;
+  }, []);
+
+  useFrame((_, dt) => {
+    if (sweep.current) sweep.current.rotation.z -= dt * (running ? 0.9 : 0.25);
+  });
+
+  return (
+    <group position-y={-1.24}>
+      <Grid
+        args={[80, 80]}
+        cellSize={1}
+        cellThickness={0.5}
+        cellColor="#181816"
+        sectionSize={4}
+        sectionThickness={0.8}
+        sectionColor="#24231f"
+        fadeDistance={42}
+        fadeStrength={1.6}
+        infiniteGrid
+      />
+      {[3, 6, RING, 11].map((r) => (
+        <Line key={r} points={circlePoints(r, 160, 0.01)} color={r === RING ? C.dim : C.line} lineWidth={r === RING ? 1 : 0.6} />
+      ))}
+      <lineSegments geometry={ticks} position-y={0.01}>
+        <lineBasicMaterial color={C.dim} />
+      </lineSegments>
+      <mesh ref={sweep} rotation-x={-Math.PI / 2} position-y={0.02}>
+        <ringGeometry args={[0.4, 13.2, 64, 1, 0, 0.55]} />
+        <meshBasicMaterial color={C.accent} transparent opacity={running ? 0.045 : 0.018} depthWrite={false} toneMapped={false} />
+      </mesh>
+    </group>
+  );
+}
+
+/* --------------------------------- Enlaces -------------------------------- */
 
 function Links() {
   const links = useMemo(() => {
-    const list: { key: string; points: THREE.Vector3[]; color: string; opacity: number }[] = [];
-    for (const d of DIRECTORS) {
-      list.push({ key: `ceo-${d.id}`, points: curveBetween("ceo", d.id).getPoints(40), color: d.color, opacity: 0.35 });
-    }
+    const list: { key: string; points: THREE.Vector3[]; dashed: boolean; opacity: number }[] = [];
+    for (const d of DIRECTORS) list.push({ key: `ceo-${d.id}`, points: curveBetween("ceo", d.id).getPoints(40), dashed: false, opacity: 0.55 });
     DIRECTORS.forEach((d, i) => {
       const next = DIRECTORS[(i + 1) % DIRECTORS.length];
-      list.push({ key: `${d.id}-${next.id}`, points: curveBetween(d.id, next.id).getPoints(40), color: "#64748b", opacity: 0.18 });
+      list.push({ key: `${d.id}-${next.id}`, points: curveBetween(d.id, next.id).getPoints(40), dashed: true, opacity: 0.35 });
     });
-    list.push({ key: "ceo-dueno", points: curveBetween("ceo", "dueno").getPoints(20), color: OWNER.color, opacity: 0.5 });
+    list.push({ key: "ceo-dueno", points: curveBetween("ceo", "dueno").getPoints(20), dashed: false, opacity: 0.8 });
     return list;
   }, []);
   return (
     <>
       {links.map((l) => (
-        <Line key={l.key} points={l.points} color={l.color} lineWidth={1} transparent opacity={l.opacity} dashed={false} />
+        <Line key={l.key} points={l.points} color={C.line} lineWidth={1} transparent opacity={l.opacity} dashed={l.dashed} dashSize={0.25} gapSize={0.2} />
       ))}
     </>
   );
 }
 
-/* --------------------------------- Pulses --------------------------------- */
+/* --------------------------------- Pulsos --------------------------------- */
 
 const PULSE_MS = 1700;
 const TAIL = 12;
 
-/** Un "cometa": cabeza brillante + cola de esferas que siguen la misma curva. */
+/** Cometa: cabeza blanca y estela naranja que siguen la misma curva. */
 function PulseOrb({ pulse }: { pulse: Pulse }) {
   const parts = useRef<(THREE.Mesh | null)[]>([]);
   const removePulse = useOrquesta((s) => s.removePulse);
   const curve = useMemo(() => curveBetween(pulse.from, pulse.to), [pulse.from, pulse.to]);
-  const color = COLOR[pulse.from];
   const start = useRef<number | null>(null);
 
   useFrame(({ clock }) => {
@@ -81,7 +145,7 @@ function PulseOrb({ pulse }: { pulse: Pulse }) {
     const eased = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
     parts.current.forEach((m, i) => {
       if (!m) return;
-      const ti = eased - i * 0.018;
+      const ti = eased - i * 0.016;
       m.visible = ti >= 0;
       if (ti >= 0) m.position.copy(curve.getPoint(ti));
     });
@@ -92,8 +156,8 @@ function PulseOrb({ pulse }: { pulse: Pulse }) {
     <>
       {Array.from({ length: TAIL }, (_, i) => (
         <mesh key={i} ref={(m) => void (parts.current[i] = m)} visible={false} scale={1 - i / TAIL}>
-          <sphereGeometry args={[i === 0 ? 0.2 : 0.13, 12, 12]} />
-          <meshBasicMaterial color={i === 0 ? "#ffffff" : color} toneMapped={false} transparent opacity={1 - i / TAIL} />
+          <boxGeometry args={i === 0 ? [0.2, 0.2, 0.2] : [0.11, 0.11, 0.11]} />
+          <meshBasicMaterial color={i === 0 ? "#ffffff" : C.accent} toneMapped={false} transparent opacity={1 - i / TAIL} />
         </mesh>
       ))}
     </>
@@ -111,35 +175,25 @@ function Pulses() {
   );
 }
 
-/* --------------------------------- Labels --------------------------------- */
+/* -------------------------------- Etiquetas -------------------------------- */
 
 const Z_RANGE: [number, number] = [10, 0];
 // Contenedor fijo para las etiquetas: evita que drei recree su raíz React al conectar eventos.
 const labelPortal = { current: null as HTMLElement | null };
 
-const STATUS_TEXT: Record<NodeStatus, string> = {
-  idle: "en espera",
-  working: "analizando",
-  done: "listo",
-  error: "error",
-};
+const STATUS_TEXT: Record<NodeStatus, string> = { idle: "en espera", working: "activo", done: "listo", error: "error" };
 
-function Label({ id, name, title, color, status, offset }: { id: NodeId; name: string; title: string; color: string; status: NodeStatus; offset: number }) {
+function Label({ id, code, name, status, offset }: { id: NodeId; code: string; name: string; status: NodeStatus; offset: number }) {
   const select = useOrquesta((s) => s.select);
   const selected = useOrquesta((s) => s.selected === id);
   return (
     <group position-y={offset}>
-      <Html center distanceFactor={14} zIndexRange={Z_RANGE} portal={labelPortal as React.RefObject<HTMLElement>}>
-        <button
-          onClick={() => select(id)}
-          className={`node-label ${selected ? "is-selected" : ""}`}
-          style={{ ["--c" as string]: color }}
-        >
-          <span className="node-name">{name}</span>
-          <span className="node-title">{title}</span>
-          <span className={`node-status s-${status}`}>
-            <i />
-            {STATUS_TEXT[status]}
+      <Html center distanceFactor={19} zIndexRange={Z_RANGE} portal={labelPortal as React.RefObject<HTMLElement>}>
+        <button onClick={() => select(id)} className={`unit-tag ${status} ${selected ? "sel" : ""}`}>
+          <span className="ut-code">{code}</span>
+          <span className="ut-body">
+            <span className="ut-name">{name}</span>
+            <span className="ut-status">{STATUS_TEXT[status]}</span>
           </span>
         </button>
       </Html>
@@ -147,29 +201,29 @@ function Label({ id, name, title, color, status, offset }: { id: NodeId; name: s
   );
 }
 
-/* -------------------------------- Directors -------------------------------- */
+const hover = {
+  onPointerOver: () => (document.body.style.cursor = "pointer"),
+  onPointerOut: () => (document.body.style.cursor = ""),
+};
+
+/* -------------------------------- Unidades -------------------------------- */
 
 function Workers({ director, lit }: { director: Director; lit: boolean }) {
   const group = useRef<THREE.Group>(null);
   useFrame((_, dt) => {
-    if (group.current) group.current.rotation.y += dt * 0.25;
+    if (group.current) group.current.rotation.y += dt * 0.2;
   });
   return (
-    <group ref={group} position={[0, -1.6, 0]}>
+    <group ref={group} position={[0, -1.05, 0]}>
       {director.team.map((w, i) => {
         const a = (i / director.team.length) * Math.PI * 2;
         const p: [number, number, number] = [Math.cos(a) * 1.9, 0, Math.sin(a) * 1.9];
         return (
           <group key={w.name}>
-            <Line points={[[0, 1.6, 0], p]} color={director.color} lineWidth={0.6} transparent opacity={lit ? 0.6 : 0.15} />
+            <Line points={[[0, 0, 0], p]} color={lit ? C.dim : C.line} lineWidth={0.6} transparent opacity={lit ? 0.9 : 0.5} />
             <mesh position={p}>
-              <sphereGeometry args={[0.17, 20, 20]} />
-              <meshStandardMaterial
-                color={director.color}
-                emissive={director.color}
-                emissiveIntensity={lit ? 2.4 : 0.35}
-                toneMapped={false}
-              />
+              <boxGeometry args={[0.17, 0.17, 0.17]} />
+              <meshStandardMaterial color={lit ? C.ink : C.body2} emissive={lit ? C.ink : "#000"} emissiveIntensity={lit ? 0.6 : 0} roughness={0.6} />
             </mesh>
           </group>
         );
@@ -183,91 +237,82 @@ function DirectorNode({ director }: { director: Director }) {
   const hasReport = useOrquesta((s) => Boolean(s.reports[director.id]));
   const selected = useOrquesta((s) => s.selected === director.id);
   const select = useOrquesta((s) => s.select);
-  const crystal = useRef<THREE.Mesh>(null);
-  const mat = useRef<THREE.MeshStandardMaterial>(null);
-  const halo = useRef<THREE.Mesh>(null);
+  const body = useRef<THREE.Group>(null);
+  const core = useRef<THREE.MeshStandardMaterial>(null);
+  const ring = useRef<THREE.Mesh>(null);
   const pos = POS[director.id];
+  const working = status === "working";
 
   useFrame(({ clock }, dt) => {
     const t = clock.elapsedTime;
-    const working = status === "working";
-    if (crystal.current) {
-      crystal.current.rotation.y += dt * (working ? 2.6 : 0.5);
-      crystal.current.position.y = Math.sin(t * 1.3 + pos.x) * 0.18;
+    if (body.current) {
+      body.current.rotation.y += dt * (working ? 1.6 : 0.25);
+      body.current.position.y = Math.sin(t * 1.1 + pos.x) * 0.08;
     }
-    if (mat.current) {
-      const base = status === "idle" ? 0.7 : status === "done" ? 2.2 : 1.6;
-      mat.current.emissiveIntensity = working ? base + Math.sin(t * 8) * 1.1 : base;
-    }
-    if (halo.current) {
-      const s = working ? 1 + ((t * 0.9) % 1) * 0.9 : 1;
-      halo.current.scale.setScalar(s);
-      (halo.current.material as THREE.MeshBasicMaterial).opacity = working ? 0.7 * (1 - ((t * 0.9) % 1)) : selected ? 0.8 : 0.3;
+    if (core.current) core.current.emissiveIntensity = working ? 2.2 + Math.sin(t * 9) * 1.2 : status === "done" ? 0.9 : 0.15;
+    if (ring.current) {
+      const s = working ? 1 + ((t * 0.8) % 1) * 0.7 : 1;
+      ring.current.scale.setScalar(s);
+      (ring.current.material as THREE.MeshBasicMaterial).opacity = working ? 0.8 * (1 - ((t * 0.8) % 1)) : selected ? 0.9 : 0.35;
     }
   });
+
+  const edge = working ? C.accent : selected || status === "done" ? C.ink : C.dim;
+  const coreColor = working ? C.accent : C.ink;
 
   return (
     <group position={pos}>
       <group
+        ref={body}
         onClick={(e) => {
           e.stopPropagation();
           select(director.id);
         }}
-        onPointerOver={() => (document.body.style.cursor = "pointer")}
-        onPointerOut={() => (document.body.style.cursor = "")}
+        {...hover}
       >
-        <mesh ref={crystal}>
-          <octahedronGeometry args={[0.85, 0]} />
-          <meshStandardMaterial
-            ref={mat}
-            color={director.color}
-            emissive={director.color}
-            emissiveIntensity={0.7}
-            metalness={0.3}
-            roughness={0.15}
-            flatShading
-            toneMapped={false}
-          />
+        <mesh>
+          <boxGeometry args={[1.05, 1.05, 1.05]} />
+          <meshStandardMaterial color={C.body} metalness={0.4} roughness={0.55} transparent opacity={0.92} />
+          <Edges color={edge} threshold={15} />
+        </mesh>
+        <mesh>
+          <boxGeometry args={[0.36, 0.36, 0.36]} />
+          <meshStandardMaterial ref={core} color={coreColor} emissive={coreColor} emissiveIntensity={0.15} toneMapped={false} />
         </mesh>
       </group>
-      <mesh ref={halo} rotation-x={-Math.PI / 2} position={[0, -0.95, 0]}>
-        <ringGeometry args={[1.15, 1.25, 64]} />
-        <meshBasicMaterial color={selected ? "#ffffff" : director.color} transparent opacity={0.3} toneMapped={false} side={THREE.DoubleSide} />
+      <mesh ref={ring} rotation-x={-Math.PI / 2} position={[0, -1.02, 0]}>
+        <ringGeometry args={[1.12, 1.17, 6]} />
+        <meshBasicMaterial color={working ? C.accent : selected ? C.ink : C.dim} transparent opacity={0.35} toneMapped={false} side={THREE.DoubleSide} />
       </mesh>
       <mesh position={[0, -1.15, 0]}>
-        <cylinderGeometry args={[1.35, 1.5, 0.18, 6]} />
-        <meshStandardMaterial color="#0b1222" metalness={0.8} roughness={0.35} />
+        <cylinderGeometry args={[1.4, 1.4, 0.06, 6]} />
+        <meshStandardMaterial color="#141413" metalness={0.6} roughness={0.5} />
       </mesh>
-      <pointLight color={director.color} intensity={status === "idle" ? 4 : 12} distance={6} />
       <Workers director={director} lit={hasReport} />
-      <Label id={director.id} name={director.name} title={director.title.replace("Directivo de ", "").replace("Directiva de ", "")} color={director.color} status={status} offset={1.9} />
+      <Label id={director.id} code={director.code} name={director.name} status={status} offset={1.55} />
     </group>
   );
 }
 
-/* ------------------------------ Orchestrator ------------------------------ */
-
 function CeoNode() {
   const status = useOrquesta((s) => s.statuses.ceo);
   const select = useOrquesta((s) => s.select);
-  const core = useRef<THREE.Mesh>(null);
   const shell = useRef<THREE.Mesh>(null);
+  const core = useRef<THREE.Mesh>(null);
   const rings = useRef<THREE.Group>(null);
+  const working = status === "working";
 
   useFrame(({ clock }, dt) => {
     const t = clock.elapsedTime;
-    const speed = status === "working" ? 1.8 : 0.5;
+    const speed = working ? 1.6 : 0.35;
     if (shell.current) {
-      shell.current.rotation.y += dt * speed * 0.6;
-      shell.current.rotation.x += dt * speed * 0.3;
+      shell.current.rotation.y += dt * speed * 0.5;
+      shell.current.rotation.x += dt * speed * 0.2;
     }
-    if (core.current) core.current.scale.setScalar(1 + Math.sin(t * (status === "working" ? 6 : 2)) * 0.08);
-    if (rings.current) {
-      rings.current.children.forEach((r, i) => {
-        r.rotation.x += dt * speed * (0.4 + i * 0.25);
-        r.rotation.y += dt * speed * (0.3 - i * 0.12);
-      });
-    }
+    if (core.current) core.current.scale.setScalar(1 + Math.sin(t * (working ? 6 : 1.5)) * 0.05);
+    rings.current?.children.forEach((r, i) => {
+      r.rotation.z += dt * speed * (i % 2 ? -0.6 : 0.45);
+    });
   });
 
   return (
@@ -277,28 +322,32 @@ function CeoNode() {
           e.stopPropagation();
           select("ceo");
         }}
-        onPointerOver={() => (document.body.style.cursor = "pointer")}
-        onPointerOut={() => (document.body.style.cursor = "")}
+        {...hover}
       >
         <mesh ref={core}>
-          <sphereGeometry args={[0.7, 32, 32]} />
-          <meshStandardMaterial color="#e0f2fe" emissive="#bae6fd" emissiveIntensity={2.5} toneMapped={false} />
+          <icosahedronGeometry args={[0.62, 0]} />
+          <meshStandardMaterial color={C.ink} emissive={C.ink} emissiveIntensity={working ? 1.4 : 0.7} flatShading toneMapped={false} />
         </mesh>
         <mesh ref={shell}>
-          <icosahedronGeometry args={[1.5, 1]} />
-          <meshStandardMaterial color="#93c5fd" emissive="#60a5fa" emissiveIntensity={0.9} wireframe toneMapped={false} />
+          <icosahedronGeometry args={[1.45, 1]} />
+          <meshBasicMaterial color={C.ink} wireframe transparent opacity={0.22} />
         </mesh>
       </group>
       <group ref={rings}>
-        {[2.2, 2.6, 3.0].map((r, i) => (
-          <mesh key={r} rotation={[Math.PI / 2 + i * 0.5, i * 0.7, 0]}>
-            <torusGeometry args={[r, 0.025, 8, 128]} />
-            <meshBasicMaterial color={["#38bdf8", "#a78bfa", "#f472b6"][i]} toneMapped={false} />
-          </mesh>
-        ))}
+        <mesh rotation-x={Math.PI / 2}>
+          <torusGeometry args={[2.2, 0.012, 6, 160]} />
+          <meshBasicMaterial color={C.dim} />
+        </mesh>
+        <mesh rotation={[Math.PI / 2, 0, 0]}>
+          <torusGeometry args={[2.55, 0.03, 6, 120, Math.PI * 0.42]} />
+          <meshBasicMaterial color={C.accent} toneMapped={false} />
+        </mesh>
+        <mesh rotation={[Math.PI / 2.4, 0.3, 0]}>
+          <torusGeometry args={[2.9, 0.01, 6, 160]} />
+          <meshBasicMaterial color={C.line} />
+        </mesh>
       </group>
-      <pointLight color="#93c5fd" intensity={30} distance={14} />
-      <Label id="ceo" name={CEO.name} title={CEO.title} color="#93c5fd" status={status} offset={3.6} />
+      <Label id="ceo" code="ORQ" name={CEO.name} status={status} offset={3.3} />
     </group>
   );
 }
@@ -306,50 +355,34 @@ function CeoNode() {
 function OwnerNode() {
   const status = useOrquesta((s) => s.statuses.dueno);
   const select = useOrquesta((s) => s.select);
-  const ref = useRef<THREE.Mesh>(null);
+  const ref = useRef<THREE.Group>(null);
   useFrame(({ clock }, dt) => {
     if (ref.current) {
-      ref.current.rotation.y += dt * 0.6;
-      ref.current.position.y = Math.sin(clock.elapsedTime) * 0.15;
+      ref.current.rotation.y += dt * 0.5;
+      ref.current.position.y = Math.sin(clock.elapsedTime) * 0.1;
     }
   });
   return (
     <group position={POS.dueno}>
-      <mesh
+      <group
         ref={ref}
         onClick={(e) => {
           e.stopPropagation();
           select("dueno");
         }}
-        onPointerOver={() => (document.body.style.cursor = "pointer")}
-        onPointerOut={() => (document.body.style.cursor = "")}
+        {...hover}
       >
-        <dodecahedronGeometry args={[0.6, 0]} />
-        <meshStandardMaterial
-          color={OWNER.color}
-          emissive={OWNER.color}
-          emissiveIntensity={status === "done" ? 3 : 1.2}
-          metalness={0.6}
-          roughness={0.2}
-          flatShading
-          toneMapped={false}
-        />
-      </mesh>
-      <pointLight color={OWNER.color} intensity={10} distance={6} />
-      <Label id="dueno" name={OWNER.name} title={OWNER.title} color={OWNER.color} status={status === "done" ? "done" : "idle"} offset={1.3} />
+        <mesh rotation={[Math.PI / 4, 0, Math.PI / 4]}>
+          <boxGeometry args={[0.62, 0.62, 0.62]} />
+          <meshStandardMaterial color={OWNER.color} emissive={OWNER.color} emissiveIntensity={status === "done" ? 1.8 : 0.7} roughness={0.4} toneMapped={false} />
+        </mesh>
+      </group>
+      <Label id="dueno" code="OWN" name={OWNER.name} status={status === "done" ? "done" : "idle"} offset={1.15} />
     </group>
   );
 }
 
-/* ----------------------------- Airlock membrane ---------------------------- */
-
-export const VERDICT_COLOR: Record<string, string> = {
-  permitido: "#34d399",
-  aprobacion: "#fbbf24",
-  bloqueado: "#f87171",
-  cuarentena: "#c084fc",
-  redactado: "#60a5fa",
-};
+/* ------------------------------ Membrana Airlock --------------------------- */
 
 const MEMBRANE_Y = 3.9;
 const MEMBRANE_R = 4.4;
@@ -362,10 +395,12 @@ function AirlockMembrane() {
   const band = useRef<THREE.MeshBasicMaterial>(null);
   const cage = useRef<THREE.MeshBasicMaterial>(null);
   const flashAt = useRef(-10);
-  const color = useMemo(() => new THREE.Color(), []);
-  const base = useMemo(() => new THREE.Color("#5eead4"), []);
-
   const lastId = useRef<number | null>(null);
+  const base = useMemo(() => new THREE.Color(C.dim), []);
+  const hot = useMemo(() => new THREE.Color(C.accent), []);
+  const ok = useMemo(() => new THREE.Color(C.ink), []);
+  const color = useMemo(() => new THREE.Color(), []);
+
   useFrame(({ clock }, dt) => {
     const t = clock.elapsedTime;
     if (flash && flash.id !== lastId.current) {
@@ -373,11 +408,12 @@ function AirlockMembrane() {
       flashAt.current = t;
     }
     const k = Math.max(0, 1 - (t - flashAt.current) / 1.1);
-    color.copy(base).lerp(new THREE.Color(flash ? VERDICT_COLOR[flash.verdict] : "#5eead4"), k);
-    if (group.current) group.current.rotation.y += dt * 0.12;
+    const target = flash && ["aprobacion", "bloqueado", "cuarentena"].includes(flash.verdict) ? hot : ok;
+    color.copy(base).lerp(target, k);
+    if (group.current) group.current.rotation.y += dt * 0.08;
     if (band.current) {
       band.current.color.copy(color);
-      band.current.opacity = 0.06 + k * 0.28;
+      band.current.opacity = 0.03 + k * 0.16;
     }
     if (cage.current) {
       cage.current.color.copy(color);
@@ -389,18 +425,18 @@ function AirlockMembrane() {
     <group position-y={MEMBRANE_Y}>
       <group ref={group}>
         <mesh>
-          <cylinderGeometry args={[MEMBRANE_R, MEMBRANE_R, 0.9, 6, 1, true]} />
-          <meshBasicMaterial ref={band} transparent opacity={0.08} side={THREE.DoubleSide} depthWrite={false} toneMapped={false} />
+          <cylinderGeometry args={[MEMBRANE_R, MEMBRANE_R, 0.7, 6, 1, true]} />
+          <meshBasicMaterial ref={band} transparent opacity={0.04} side={THREE.DoubleSide} depthWrite={false} toneMapped={false} />
         </mesh>
         <mesh>
-          <cylinderGeometry args={[MEMBRANE_R + 0.01, MEMBRANE_R + 0.01, 0.9, 6, 3, true]} />
+          <cylinderGeometry args={[MEMBRANE_R + 0.01, MEMBRANE_R + 0.01, 0.7, 6, 2, true]} />
           <meshBasicMaterial ref={cage} wireframe transparent opacity={0.4} toneMapped={false} />
         </mesh>
       </group>
-      <group position={[MEMBRANE_R + 0.2, 0.9, 0]}>
-        <Html center distanceFactor={14} zIndexRange={Z_RANGE} portal={labelPortal as React.RefObject<HTMLElement>}>
+      <group position={[MEMBRANE_R + 0.3, 0.75, 0]}>
+        <Html center distanceFactor={19} zIndexRange={Z_RANGE} portal={labelPortal as React.RefObject<HTMLElement>}>
           <button className="airlock-tag" onClick={() => select("airlock")}>
-            <span>⬢</span> AIRLOCK
+            AIRLOCK
           </button>
         </Html>
       </group>
@@ -408,20 +444,31 @@ function AirlockMembrane() {
   );
 }
 
-/* ---------------------------------- Scene --------------------------------- */
+/* --------------------------------- Escena --------------------------------- */
+
+/** En pantallas angostas aleja la cámara para que quepa toda la torre. */
+function CameraFit() {
+  const { camera, size } = useThree();
+  useEffect(() => {
+    const aspect = size.width / size.height;
+    const distance = aspect < 0.8 ? 40 : aspect < 1.1 ? 33 : 29;
+    camera.position.setLength(distance);
+  }, [camera, size.width, size.height]);
+  return null;
+}
 
 function Controls() {
   const running = useOrquesta((s) => s.running);
   const selected = useOrquesta((s) => s.selected);
   return (
     <OrbitControls
-      target={[0, 4.5, 0]}
+      target={[0, 4.2, 0]}
       enablePan={false}
       minDistance={14}
-      maxDistance={40}
+      maxDistance={46}
       maxPolarAngle={Math.PI * 0.52}
       autoRotate={!selected || running}
-      autoRotateSpeed={running ? 0.8 : 0.35}
+      autoRotateSpeed={running ? 0.6 : 0.25}
       enableDamping
     />
   );
@@ -431,7 +478,7 @@ export default function Scene() {
   const select = useOrquesta((s) => s.select);
   return (
     <Canvas
-      camera={{ position: [0, 12, 29], fov: 42 }}
+      camera={{ position: [0, 11, 27], fov: 42 }}
       dpr={[1, 2]}
       gl={{ antialias: true, powerPreference: "high-performance" }}
       onPointerMissed={() => select(null)}
@@ -439,27 +486,13 @@ export default function Scene() {
         labelPortal.current = gl.domElement.parentElement;
       }}
     >
-      <color attach="background" args={["#04060c"]} />
-      <fog attach="fog" args={["#04060c", 22, 55]} />
-      <ambientLight intensity={0.25} />
-      <directionalLight position={[10, 20, 10]} intensity={0.4} />
+      <color attach="background" args={[C.bg]} />
+      <fog attach="fog" args={[C.bg, 24, 52]} />
+      <ambientLight intensity={0.55} />
+      <directionalLight position={[-8, 16, 10]} intensity={1.1} color="#fffaf2" />
+      <directionalLight position={[10, 4, -12]} intensity={0.35} color="#ffd9c4" />
 
-      <Stars radius={90} depth={40} count={3500} factor={3} saturation={0} fade speed={0.6} />
-      <Sparkles count={120} scale={[26, 14, 26]} position={[0, 5, 0]} size={2} speed={0.25} color="#7dd3fc" opacity={0.5} />
-      <Grid
-        position={[0, -1.25, 0]}
-        args={[80, 80]}
-        cellSize={1}
-        cellThickness={0.5}
-        cellColor="#0f2a44"
-        sectionSize={5}
-        sectionThickness={1}
-        sectionColor="#1d4ed8"
-        fadeDistance={45}
-        fadeStrength={1.4}
-        infiniteGrid
-      />
-
+      <Floor />
       <Links />
       {DIRECTORS.map((d) => (
         <DirectorNode key={d.id} director={d} />
@@ -469,10 +502,11 @@ export default function Scene() {
       <AirlockMembrane />
       <Pulses />
 
+      <CameraFit />
       <Controls />
       <EffectComposer>
-        <Bloom luminanceThreshold={0.25} luminanceSmoothing={0.2} intensity={1.3} mipmapBlur />
-        <Vignette eskil={false} offset={0.2} darkness={0.85} />
+        <Bloom luminanceThreshold={0.62} luminanceSmoothing={0.15} intensity={0.55} mipmapBlur />
+        <Vignette eskil={false} offset={0.25} darkness={0.7} />
       </EffectComposer>
     </Canvas>
   );
